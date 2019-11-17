@@ -23,9 +23,6 @@ import dense_correspondence.correspondence_tools.correspondence_finder as corres
 import dense_correspondence.correspondence_tools.correspondence_augmentation as correspondence_augmentation
 
 
-
-
-
 class SpartanDatasetDataType:
     SINGLE_OBJECT_WITHIN_SCENE = 0
     SINGLE_OBJECT_ACROSS_SCENE = 1
@@ -366,10 +363,10 @@ class SpartanDataset(DenseCorrespondenceDataset):
         """
         if self._image_index_sample_range is None:
     	    knots_info = self.get_knots_info(scene_name)
-            image_idxs = knots_info.keys()
+            image_idxs = knots_info.keys() 
             random_idx = int(random.choice(image_idxs))
         else:
-            random_idx = int(random.choice(self._image_index_sample_range))
+            random_idx = int(random.choice(self._image_index_sample_range)) 
         return random_idx	
 
     def get_random_object_id(self):
@@ -567,6 +564,7 @@ class SpartanDataset(DenseCorrespondenceDataset):
         image_a_rgb, image_a_mask = self.get_rgb_mask(scene_name, image_a_idx)
         # image b
         image_b_idx = self.get_random_image_index(scene_name)
+        #image_b_idx = image_a_idx + 1 #NOTE: sampling in sequence
         metadata['image_b_idx'] = image_b_idx
         if image_b_idx is None:
             logging.info("no frame with sufficiently different pose found, returning")
@@ -1118,7 +1116,7 @@ class SpartanDataset(DenseCorrespondenceDataset):
         :rtype:
         """
         result = uv_tensor[1].long() * image_width + uv_tensor[0].long()
-	return torch.min(result, torch.ones_like(result).long() * (( image_width * 480 ) - 1))
+	return torch.min(result, torch.ones_like(result).long() * (( image_width * 240 ) - 1))
 
     @staticmethod
     def mask_image_from_uv_flat_tensor(uv_flat_tensor, image_width, image_height):

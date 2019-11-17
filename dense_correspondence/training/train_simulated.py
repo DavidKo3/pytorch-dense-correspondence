@@ -6,7 +6,7 @@ import sys
 import logging
 
 # utils.set_default_cuda_visible_devices()
-utils.set_cuda_visible_devices([0]) # use this to manually set CUDA_VISIBLE_DEVICES
+utils.set_cuda_visible_devices([2, 3, 4]) # use this to manually set CUDA_VISIBLE_DEVICES
 
 from dense_correspondence.training.training import DenseCorrespondenceTraining
 from dense_correspondence.dataset.spartan_dataset_masked import SpartanDataset
@@ -59,6 +59,6 @@ if args.depth_invariant == True:
 
 train = DenseCorrespondenceTraining(dataset=dataset, config=train_config)
 if args.resume:
-    train.run_from_pretrained("simulated/{}".format(args.name))
+    train.run_from_pretrained("/home/priya/code/data_volume/pdc_synthetic_2/trained_models/tutorials/{}".format(args.name))
 else:
     train.run()

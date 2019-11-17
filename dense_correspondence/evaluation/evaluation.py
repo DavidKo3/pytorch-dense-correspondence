@@ -2283,6 +2283,7 @@ class DenseCorrespondenceEvaluationPlotter(object):
         x_axis = l + b * np.arange(0, num_bins)
         x_axis /= x_axis_scale_factor
         plot = ax.plot(x_axis, cumhist, label=label)
+        print 'summed errors', np.sum(x_axis)
         return plot
 
     @staticmethod
@@ -2314,8 +2315,6 @@ class DenseCorrespondenceEvaluationPlotter(object):
         else:
             ax.set_xlabel('Pixel match error (fraction of image), L2 (pixel distance)')
         ax.set_ylabel('Fraction of images')
-
-        # ax.set_xlim([0,200])
 		
         return plot
 
@@ -2522,7 +2521,8 @@ class DenseCorrespondenceEvaluationPlotter(object):
         if previous_fig_axes==None:
             N = 5 
             if use_masked_plots:
-                fig, axes = plt.subplots(nrows=N, ncols=2, figsize=(15,N*5))
+                #fig, axes = plt.subplots(nrows=N, ncols=2, figsize=(15,N*5))
+                fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(15,6))
             else:
                 fig, axes = plt.subplots(N, figsize=(10,N*5))
         else:
@@ -2541,7 +2541,7 @@ class DenseCorrespondenceEvaluationPlotter(object):
         if use_masked_plots:
             plot = DCEP.make_pixel_match_error_plot(axes[0,1], df, label=label, masked=True)
         ax.legend()
-      	plt.savefig('/home/priya/code/data_volume/pixel_match_new.png') 
+      	#plt.savefig('/home/priya/code/data_volume/pixel_match_new.png') 
         # 3D match error
         #ax = get_ax(axes, 1)
         #plot = DCEP.make_descriptor_accuracy_plot(ax, df, label=label)
