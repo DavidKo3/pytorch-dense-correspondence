@@ -562,9 +562,7 @@ class SpartanDataset(DenseCorrespondenceDataset):
 
         image_a_idx = self.get_random_image_index(scene_name)
         image_a_rgb, image_a_mask = self.get_rgb_mask(scene_name, image_a_idx)
-        # image b
         image_b_idx = self.get_random_image_index(scene_name)
-        #image_b_idx = image_a_idx + 1 #NOTE: sampling in sequence
         metadata['image_b_idx'] = image_b_idx
         if image_b_idx is None:
             logging.info("no frame with sufficiently different pose found, returning")
