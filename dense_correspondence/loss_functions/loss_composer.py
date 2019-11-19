@@ -2,6 +2,8 @@ from dense_correspondence.dataset.spartan_dataset_masked import SpartanDataset, 
 from dense_correspondence.loss_functions.pixelwise_contrastive_loss import PixelwiseContrastiveLoss
 
 import torch
+import torch.nn.functional as F
+import numpy as np
 from torch.autograd import Variable
 
 def get_loss(pixelwise_contrastive_loss, match_type, 
@@ -59,6 +61,49 @@ def get_loss(pixelwise_contrastive_loss, match_type,
     else:
         raise ValueError("Should only have above scenes?")
 
+def translate(value, leftMin, leftMax, rightMin, rightMax):
+    leftSpan = leftMax - leftMin
+    rightSpan = rightMax - rightMin
+    valueScaled = float(value - leftMin) / float(leftSpan)
+    return rightMin + (valueScaled * rightSpan)
+
+
+def flattened_pixel_locations_to_u_v(flat_pixel_locations, image_width=640, image_height=480):
+    u_v_pixel_locations = flat_pixel_locations.repeat(1,2)
+    u_v_pixel_locations[:,0] = u_v_pixel_locations[:,0]%image_width 
+    u_v_pixel_locations[:,1] = u_v_pixel_locations[:,1]/image_width
+    return u_v_pixel_locations
+
+def gauss_2d_dist(width, height, sigma, u, v):
+    mu_x = translate(u, 0, width-1, -1, 1)
+    mu_y = translate(v, 0, height-1, -1, 1)
+    X,Y=np.meshgrid(np.linspace(-1,1,width),np.linspace(-1,1,height))
+    G = np.exp(-((X-mu_x)**2+(Y-mu_y)**2)/2.0*sigma**2)
+    G = np.true_divide(G, np.sum(G))
+    # flatten G to match dimensions of p
+    G = G.ravel().reshape(1, width*height)
+    return torch.from_numpy(G).double().cuda()
+
+def distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_b, image_width=640, image_height=480):
+    # computes distributional loss for a single image pair with a single correspondence
+    match_b_descriptor = torch.index_select(image_b_pred, 1, match_b) # get descriptor for image_b at match_b 
+    norm_diffs = (image_a_pred - match_b_descriptor).norm(2, 2).pow(2) # compute norm diff of image a per-pixel descriptors and match_b_descriptor
+    p_a = F.softmax(-1 * norm_diffs, dim=1).double() # compute current distribution
+    #uv = flattened_pixel_locations_to_u_v(match_a)
+    u = match_a.item()%image_width 
+    v = match_a.item()/image_width
+    print(u, v)
+    q_a = gauss_2d_dist(image_width, image_height, 10, u, v) # get ground truth gauss distribution (centered at match_a)
+    loss = F.kl_div(q_a.log(), p_a, None, None, 'sum') # compute kl divergence loss
+    return loss
+
+def get_distributional_loss(image_a_pred, image_b_pred, matches_a, matches_b):
+    #loss = torch.FloatTensor([0.0])
+    loss = 0.0
+    for match_a, match_b in list(zip(matches_a, matches_b))[::3]:
+	loss += distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_b)
+	loss += distributional_loss_single_match(image_b_pred, image_a_pred, match_b, match_a)
+    return loss
 
 def get_within_scene_loss(pixelwise_contrastive_loss, image_a_pred, image_b_pred,
                                         matches_a,    matches_b,
@@ -68,6 +113,7 @@ def get_within_scene_loss(pixelwise_contrastive_loss, image_a_pred, image_b_pred
     """
     Simple wrapper for pixelwise_contrastive_loss functions.  Args and return args documented above in get_loss()
     """
+    get_distributional_loss(image_a_pred, image_b_pred, matches_a, matches_b)
     pcl = pixelwise_contrastive_loss
 
     match_loss, masked_non_match_loss, num_masked_hard_negatives =\

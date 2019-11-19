@@ -286,13 +286,7 @@ class DenseCorrespondenceTraining(object):
             self.save_network(dcn, optimizer, 0)
 
         for epoch in range(50):  # loop over the dataset multiple times
-#	    if epoch % 5 == 0:
-#		print "Sampling indices in range", (epoch//5*360, epoch//5*360 + 360)
-#            self._dataset._image_index_sample_range = range(epoch//5*360, epoch//5*360 + 360)
             for i, data in enumerate(self._data_loader, 0):
-	    	#if loss_current_iteration % 360 == 0:
-	    	#    print "Sampling indices in range", (loss_current_iteration//360*360 + 360)
-            	#self._dataset._image_index_sample_range = range(loss_current_iteration//360*360 + 360)
                 loss_current_iteration += 1
                 start_iter = time.time()
 
@@ -307,7 +301,6 @@ class DenseCorrespondenceTraining(object):
                 if (match_type == -1).all():
                     print "\n empty data, continuing \n"
                     continue
-
 
                 data_type = metadata["type"][0]
                 
@@ -336,15 +329,17 @@ class DenseCorrespondenceTraining(object):
                 image_b_pred = dcn.process_network_output(image_b_pred, batch_size)
 
                 # get loss
-                loss, match_loss, masked_non_match_loss, \
-                background_non_match_loss, blind_non_match_loss = loss_composer.get_loss(pixelwise_contrastive_loss, match_type,
-                                                                                image_a_pred, image_b_pred,
-                                                                                matches_a,     matches_b,
-                                                                                masked_non_matches_a, masked_non_matches_b,
-                                                                                background_non_matches_a, background_non_matches_b,
-                                                                                blind_non_matches_a, blind_non_matches_b)
+                #loss, match_loss, masked_non_match_loss, \
+                #background_non_match_loss, blind_non_match_loss = loss_composer.get_loss(pixelwise_contrastive_loss, match_type,
+                #                                                                image_a_pred, image_b_pred,
+                #                                                                matches_a,     matches_b,
+                #                                                                masked_non_matches_a, masked_non_matches_b,
+                #                                                                background_non_matches_a, background_non_matches_b,
+                #                                                                blind_non_matches_a, blind_non_matches_b)
                 
+		loss = loss_composer.get_distributional_loss(image_a_pred, image_b_pred, matches_a, matches_b)
 
+		print "loss:", loss
                 loss.backward()
                 optimizer.step()
 
@@ -414,7 +409,23 @@ class DenseCorrespondenceTraining(object):
                     if data_type == SpartanDatasetDataType.DIFFERENT_OBJECT:
                         self._tensorboard_logger.log_value("train different object", loss.item(), loss_current_iteration)
 
-                update_plots(loss, match_loss, masked_non_match_loss, background_non_match_loss, blind_non_match_loss)
+                def update_plot(loss):
+                    """
+                    Updates the tensorboard plots with current loss function information
+                    :return:
+                    :rtype:
+                    """
+                    learning_rate = DenseCorrespondenceTraining.get_learning_rate(optimizer)
+                    self._logging_dict['train']['learning_rate'].append(learning_rate)
+                    self._tensorboard_logger.log_value("learning rate", learning_rate, loss_current_iteration)
+
+                    # loss is never zero
+                    if data_type == SpartanDatasetDataType.SINGLE_OBJECT_WITHIN_SCENE:
+                        print "logging train loss"
+                        self._tensorboard_logger.log_value("train loss SINGLE_OBJECT_WITHIN_SCENE", loss.item(), loss_current_iteration)
+
+                #update_plots(loss, match_loss, masked_non_match_loss, background_non_match_loss, blind_non_match_loss)
+                update_plot(loss)
 
                 if loss_current_iteration % save_rate == 0:
                     self.save_network(dcn, optimizer, loss_current_iteration, logging_dict=self._logging_dict)

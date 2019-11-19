@@ -1,12 +1,13 @@
 # import matplotlib
 import dense_correspondence_manipulation.utils.utils as utils
 utils.add_dense_correspondence_to_python_path()
+import os
 from dense_correspondence.training.training import *
 import sys
 import logging
 
 # utils.set_default_cuda_visible_devices()
-utils.set_cuda_visible_devices([2, 3, 4]) # use this to manually set CUDA_VISIBLE_DEVICES
+#utils.set_cuda_visible_devices([2, 3, 4]) # use this to manually set CUDA_VISIBLE_DEVICES
 
 from dense_correspondence.training.training import DenseCorrespondenceTraining
 from dense_correspondence.dataset.spartan_dataset_masked import SpartanDataset
@@ -19,9 +20,12 @@ parser.add_argument('--dim', type=int, default=3)
 parser.add_argument('--iters', type=int, default=3500)
 parser.add_argument('--normalization', type=str, default="standard") # unit or standard
 parser.add_argument('--depth_invariant', action='store_true')
+parser.add_argument('--gpu_id', type=str, default='0')
 parser.add_argument("--resume", help="resume from checkpoint params",
                     action="store_true")
 args = parser.parse_args()
+
+os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
 if args.resume:
     print("About to resume training")

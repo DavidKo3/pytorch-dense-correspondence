@@ -1114,7 +1114,8 @@ class SpartanDataset(DenseCorrespondenceDataset):
         :rtype:
         """
         result = uv_tensor[1].long() * image_width + uv_tensor[0].long()
-	return torch.min(result, torch.ones_like(result).long() * (( image_width * 240 ) - 1))
+	return result
+	#return torch.min(result, torch.ones_like(result).long() * (( image_width * 240 ) - 1))
 
     @staticmethod
     def mask_image_from_uv_flat_tensor(uv_flat_tensor, image_width, image_height):
