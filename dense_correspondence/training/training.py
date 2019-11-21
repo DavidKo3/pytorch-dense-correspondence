@@ -290,8 +290,17 @@ class DenseCorrespondenceTraining(object):
                 loss_current_iteration += 1
                 start_iter = time.time()
 
+                #match_type, \
+                #img_a, img_b, \
+                #matches_a, matches_b, \
+                #masked_non_matches_a, masked_non_matches_b, \
+                #background_non_matches_a, background_non_matches_b, \
+                #blind_non_matches_a, blind_non_matches_b, \
+                #metadata = data
+
                 match_type, \
                 img_a, img_b, \
+                img_a_mask, img_b_mask, \
                 matches_a, matches_b, \
                 masked_non_matches_a, masked_non_matches_b, \
                 background_non_matches_a, background_non_matches_b, \
@@ -306,6 +315,7 @@ class DenseCorrespondenceTraining(object):
                 
                 img_a = Variable(img_a.cuda(), requires_grad=False)
                 img_b = Variable(img_b.cuda(), requires_grad=False)
+		
 
                 matches_a = Variable(matches_a.cuda().squeeze(0), requires_grad=False)
                 matches_b = Variable(matches_b.cuda().squeeze(0), requires_grad=False)
@@ -337,7 +347,7 @@ class DenseCorrespondenceTraining(object):
                 #                                                                background_non_matches_a, background_non_matches_b,
                 #                                                                blind_non_matches_a, blind_non_matches_b)
                 
-		loss = loss_composer.get_distributional_loss(image_a_pred, image_b_pred, matches_a, matches_b)
+		loss = loss_composer.get_distributional_loss(image_a_pred, image_b_pred, img_a_mask, img_b_mask, matches_a, matches_b)
 
 		print "loss:", loss
                 loss.backward()
