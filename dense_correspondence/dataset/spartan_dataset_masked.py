@@ -506,7 +506,8 @@ class SpartanDataset(DenseCorrespondenceDataset):
         metadata["scene_name"] = scene_name
         metadata["type"] = SpartanDatasetDataType.SINGLE_OBJECT_WITHIN_SCENE
 
-        return self.get_within_scene_data(scene_name, metadata)
+        return self.get_within_scene_data(scene_name, metadata, return_mask=True)
+        #return self.get_within_scene_data(scene_name, metadata)
 
     def get_multi_object_within_scene_data(self):
         """
@@ -524,7 +525,7 @@ class SpartanDataset(DenseCorrespondenceDataset):
 
         return self.get_within_scene_data(scene_name, metadata)
 
-    def get_within_scene_data(self, scene_name, metadata, for_synthetic_multi_object=False):
+    def get_within_scene_data(self, scene_name, metadata, for_synthetic_multi_object=False, return_mask=False):
         """
         The method through which the dataset is accessed for training.
         Each call is is the result of
@@ -607,7 +608,7 @@ class SpartanDataset(DenseCorrespondenceDataset):
 
         # find non_correspondences
         image_b_mask_torch = torch.from_numpy(np.asarray(image_b_mask)).type(torch.FloatTensor)
-        image_b_shape = (480, 640)
+	image_b_shape = (image_b_mask_torch.shape[0], image_b_mask_torch.shape[1])
         image_width = image_b_shape[1]
         image_height = image_b_shape[0]
 
@@ -756,7 +757,8 @@ class SpartanDataset(DenseCorrespondenceDataset):
                 plt.title("Mask of img a object pixels for which there was NO match")
                 plt.show()
 
-
+        if return_mask:
+            return metadata["type"], image_a_rgb, image_b_rgb, image_a_mask_torch, image_b_mask_torch, matches_a, matches_b, masked_non_matches_a, masked_non_matches_b, background_non_matches_a, background_non_matches_b, blind_non_matches_a, blind_non_matches_b, metadata
 
         return metadata["type"], image_a_rgb, image_b_rgb, matches_a, matches_b, masked_non_matches_a, masked_non_matches_b, background_non_matches_a, background_non_matches_b, blind_non_matches_a, blind_non_matches_b, metadata
 

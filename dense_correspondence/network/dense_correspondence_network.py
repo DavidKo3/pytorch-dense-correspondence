@@ -402,11 +402,10 @@ class DenseCorrespondenceNetwork(nn.Module):
 
         """
 	# hack!!
-	u = min(pixel_a[0], 640 - 1)
-	v = min(pixel_a[1], 480 - 1)
-        descriptor_at_pixel = res_a[v, u]
         height, width, _ = res_a.shape
-
+	u = min(pixel_a[0], width - 1)
+	v = min(pixel_a[1], height - 1)
+        descriptor_at_pixel = res_a[v, u]
         if debug:
             print "height: ", height
             print "width: ", width
