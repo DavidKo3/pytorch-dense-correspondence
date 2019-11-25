@@ -70,7 +70,10 @@ def flattened_mask_indices(img_mask, width=640, height=480, inverse=False):
     else:
 	return torch.nonzero(mask)
 
-def gauss_2d_dist(width, height, sigma, u, v, masked_indices=None):
+def normalize(x):
+    return x/x.sum()
+
+def gauss_2d_dist(width, height, sigma, u, v, masked_indices=None, normalize=False):
     mu_x = u
     mu_y = v
     X,Y=np.meshgrid(np.linspace(0,width,width),np.linspace(0,height,height))
@@ -78,10 +81,17 @@ def gauss_2d_dist(width, height, sigma, u, v, masked_indices=None):
     if masked_indices is not None:
     	#G[masked_indices] = 1e-100 # zero probability on non-masked regions (not true 0 -- this made softmax numerically unstable)
         G[masked_indices] = 0.0
-    G /= G.sum()
+    if normalize:
+    	return normalize(G)
     return torch.from_numpy(G).double().cuda()
 
-def distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_b, masked_indices=None, image_width=640, image_height=480):
+def bimodal_gauss(G1, G2, normalize=False):
+    bimodal = torch.max(G1, G2)
+    if normalize:
+        return normalize(bimodal)
+    return bimodal
+
+def distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_b, sigma=2, masked_indices=None, symm_match_a=None, image_width=640, image_height=480):
     match_b_descriptor = torch.index_select(image_b_pred, 1, match_b) # get descriptor for image_b at match_b 
     norm_degree = 2
     descriptor_diffs = image_a_pred.squeeze() - match_b_descriptor.squeeze()
@@ -89,22 +99,38 @@ def distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_
     p_a = F.softmax(-1 * norm_diffs, dim=0).double() # compute current distribution
     u = match_a.item()%image_width 
     v = match_a.item()/image_width
-    q_a = gauss_2d_dist(image_width, image_height, 2, u, v, masked_indices=masked_indices)
+    q_a = gauss_2d_dist(image_width, image_height, sigma, u, v, masked_indices=masked_indices)
+    if symm_match_a is not None:
+	# Compute bimodal gauss if we have a symmetric pixel about the length of the rope
+	u_symm = symm_match_a.item()%image_width
+	v_symm = symm_match_a.item()/image_width
+	q_a_symm = gauss_2d_dist(image_width, image_height, sigma, u_symm, v_symm, masked_indices=masked_indices)
+	q_a = bimodal_gauss(q_a, q_a_symm)
+    q_a = normalize(q_a)
     q_a += 1e-300
     loss = F.kl_div(q_a.log(), p_a, None, None, 'sum') # compute kl divergence loss
     return loss
 
-def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b):
+def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, bimodal=False):
     loss = 0.0
     masked_indices_a = flattened_mask_indices(image_a_mask, inverse=True)
     masked_indices_b = flattened_mask_indices(image_b_mask, inverse=True)
+    masked_indices_a = None
+    masked_indices_b = None
     count = 0
-    for match_a, match_b in list(zip(matches_a, matches_b))[::3]:
-	count += 1
-	loss += 0.5*(distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_b, masked_indices=masked_indices_a) \
-	+ distributional_loss_single_match(image_b_pred, image_a_pred, match_b, match_a, masked_indices=masked_indices_b))
-	#loss += 0.5*(distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_b, masked_indices=None) \
-	#+ distributional_loss_single_match(image_b_pred, image_a_pred, match_b, match_a, masked_indices=None))
+    if bimodal:
+	for i in range(len(matches_a)):
+	    count += 1
+	    match_a, match_b = matches_a[i], matches_b[i]
+	    symm_match_a, symm_match_b = matches_a[-i-1], matches_b[-i-1]
+    	    loss += 0.5*(distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_b, masked_indices=masked_indices_a, symm_match_a=symm_match_a) \
+    	    + distributional_loss_single_match(image_b_pred, image_a_pred, match_b, match_a, masked_indices=masked_indices_b, symm_match_a=symm_match_b))
+    else:
+    	#for match_a, match_b in list(zip(matches_a, matches_b))[::3]:
+    	for match_a, match_b in list(zip(matches_a, matches_b)):
+    	    count += 1
+    	    loss += 0.5*(distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_b, masked_indices=masked_indices_a) \
+    	    + distributional_loss_single_match(image_b_pred, image_a_pred, match_b, match_a, masked_indices=masked_indices_b))
     return loss/count
 
 def get_within_scene_loss(pixelwise_contrastive_loss, image_a_pred, image_b_pred,

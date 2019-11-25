@@ -347,7 +347,7 @@ class DenseCorrespondenceTraining(object):
                 #                                                                background_non_matches_a, background_non_matches_b,
                 #                                                                blind_non_matches_a, blind_non_matches_b)
                 
-		loss = loss_composer.get_distributional_loss(image_a_pred, image_b_pred, img_a_mask, img_b_mask, matches_a, matches_b)
+		loss = loss_composer.get_distributional_loss(image_a_pred, image_b_pred, img_a_mask, img_b_mask, matches_a, matches_b, bimodal=True)
 
 		print "loss:", loss
                 loss.backward()
