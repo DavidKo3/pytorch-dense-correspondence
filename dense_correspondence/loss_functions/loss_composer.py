@@ -111,12 +111,23 @@ def distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_
     loss = F.kl_div(q_a.log(), p_a, None, None, 'sum') # compute kl divergence loss
     return loss
 
+def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, sigma=2, masked_indices=None, symm_matches_a=None, image_width=640, image_height=480):
+    matches_b_descriptor = torch.index_select(image_b_pred, 1, matches_b)
+    norm_degree = 2
+    #print(matches_b_descriptor.shape, image_a_pred.shape) ((1, 201, 3), (1, 307200, 3))
+    image_a_pred_batch = image_a_pred.squeeze().repeat(matches_b.shape[0], 1).view(matches_b.shape[0], image_a_pred.shape[1], image_a_pred.shape[2])
+    descriptor_diffs = image_a_pred_batch - matches_b_descriptor.view(matches_b_descriptor.shape[1], 1, matches_b_descriptor.shape[2])
+    norm_diffs = descriptor_diffs.norm(norm_degree, 2).pow(2)
+    #p_a = F.softmax(-1 * norm_diffs, dim=1).double() # compute current distribution
+    print(p_a.shape)
+
 def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, bimodal=False):
+    distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b)
     loss = 0.0
     masked_indices_a = flattened_mask_indices(image_a_mask, inverse=True)
     masked_indices_b = flattened_mask_indices(image_b_mask, inverse=True)
-    masked_indices_a = None
-    masked_indices_b = None
+    #masked_indices_a = None
+    #masked_indices_b = None
     count = 0
     if bimodal:
 	for i in range(len(matches_a)):
