@@ -142,7 +142,7 @@ def lipschitz_single(match_b, match_b2, image_a_pred, image_b_pred, L, d, image_
     constraint = torch.sqrt((uv_b - uv_b2).pow(2).sum(0)) - (L * d)
     return constraint 
 
-def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, d, image_width=640, image_height=480):
+def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, mu, image_width=640, image_height=480):
     matches_b_descriptor = torch.index_select(image_b_pred, 1, matches_b)
     matches_b_descriptor = matches_b_descriptor.view(matches_b_descriptor.shape[1], 1, matches_b_descriptor.shape[2])
     norm_degree = 2
@@ -152,10 +152,13 @@ def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, d, image_width=640
     pred_match_a_indices = torch.argmin(norm_diffs, dim=1) # in image A!!!
     pred_matches_a_U = pred_match_a_indices%image_width
     pred_matches_a_V = pred_match_a_indices/image_width
+    pred_matches_a = torch.cat((pred_matches_a_U, pred_matches_a_V)).repeat(1,8).view(-1,2)
 
     matches_b_U = matches_b%image_width
     matches_b_V = matches_b/image_width
+    matches_b = torch.cat((matches_b_U, matches_b_V)).repeat(1,8).view(-1,2)
     neighbors_b_U, neighbors_b_V = local_crop(matches_b_U, matches_b_V) # compare with matches_b
+    neighbors_b = torch.cat((neighbors_b_U, neighbors_b_V)).view(-1, 2)
     #print(pred_matches_a_U.shape, matches_b_U.shape, neighbors_b_U.shape)
     #(201,), (201,), (201,8)
     neighbors_b_indices = neighbors_b_U%image_width + neighbors_b_V*image_width
@@ -175,11 +178,15 @@ def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, d, image_width=640
     pred_match_a_neighbor_idxs = torch.argmin(neighbor_norm_diffs, dim=1)
     pred_neighbors_a_U = pred_match_a_neighbor_idxs%image_width # (1608,)
     pred_neighbors_a_V = pred_match_a_neighbor_idxs/image_width # (1608,) compare this with pred_matches_a
-
-    #TODO: do consistency penalty, comparing neighbors_b vs matches_b and pred_neighbors_a vs pred_matches_a
+    pred_neighbors_a = torch.cat((pred_neighbors_a_U, pred_neighbors_a_V)).view(-1, 2)
+   
+    L_a = torch.sqrt((pred_matches_a - pred_neighbors_a).pow(2).sum(1).double())
+    L_b = torch.sqrt((matches_b.float() - neighbors_b).pow(2).sum(1).double())
+    loss = mu*(L_a + L * L_b).sum()
+    return loss
     
 def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, bimodal=False):
-    lipschitz_batch(matches_b, image_a_pred, image_b_pred, 1, 10)
+    lipschitz_batch(matches_b, image_a_pred, image_b_pred, 1, 1)
     masked_indices_a = flattened_mask_indices(image_a_mask, inverse=True)
     masked_indices_b = flattened_mask_indices(image_b_mask, inverse=True)
     reverse_idxs = list(range(len(matches_a)-1, -1, -1))
