@@ -99,6 +99,7 @@ def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, 
     norm_degree = 2
     image_a_pred_batch = image_a_pred.squeeze().repeat(matches_b.shape[0], 1).view(matches_b.shape[0], image_a_pred.shape[1], image_a_pred.shape[2])
     descriptor_diffs = image_a_pred_batch - matches_b_descriptor
+    print(descriptor_diffs.shape)
     norm_diffs = descriptor_diffs.norm(norm_degree, 2).pow(2)
     p_a = F.softmax(-1 * norm_diffs, dim=1).double() # compute current distribution
     q_a = gauss_2d_batch(image_width, image_height, sigma, matches_a%image_width, matches_a/image_width, masked_indices=masked_indices)
