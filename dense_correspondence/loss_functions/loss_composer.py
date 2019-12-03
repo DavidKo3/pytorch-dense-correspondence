@@ -173,8 +173,8 @@ def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, d, image_width=640
     #print(neighbor_norm_diffs.shape)
     #(1608, 307200)
     pred_match_a_neighbor_idxs = torch.argmin(neighbor_norm_diffs, dim=1)
-    pred_neighbors_a_U = pred_match_a_neighbor_idxs%image_width
-    pred_neighbors_a_V = pred_match_a_neighbor_idxs/image_width # compare this with pred_matches_a
+    pred_neighbors_a_U = pred_match_a_neighbor_idxs%image_width # (1608,)
+    pred_neighbors_a_V = pred_match_a_neighbor_idxs/image_width # (1608,) compare this with pred_matches_a
 
     #TODO: do consistency penalty, comparing neighbors_b vs matches_b and pred_neighbors_a vs pred_matches_a
     
