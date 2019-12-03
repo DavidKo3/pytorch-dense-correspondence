@@ -110,6 +110,15 @@ def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, 
     loss = F.kl_div(q_a.log(), p_a, None, None, 'sum')/matches_b_descriptor.shape[0]
     return loss
 
+def local_crop(U, V): 
+    U = U.repeat(8, 1).view(U.shape[0], 8)
+    V = V.repeat(8, 1).view(V.shape[0], 8)
+    x = torch.Tensor([0, 0, -1, -1, -1, 1, 1, 1]).cuda()
+    y = torch.Tensor([-1, 1, 0, 1, -1, 0, 1, -1]).cuda()
+    res_x = U[:,].float() + x
+    res_y = V[:,].float() + y
+    return res_x, res_y
+
 def lipschitz_single(match_b, match_b2, image_a_pred, image_b_pred, L, d, image_width=640, image_height=480):
     match_b_descriptor = torch.index_select(image_b_pred, 1, match_b) # get descriptor for image_b at match_b
     norm_degree = 2
@@ -133,15 +142,6 @@ def lipschitz_single(match_b, match_b2, image_a_pred, image_b_pred, L, d, image_
     constraint = torch.sqrt((uv_b - uv_b2).pow(2).sum(0)) - (L * d)
     return constraint 
 
-def local_crop(U, V): 
-    U = U.repeat(8, 1).view(U.shape[0], 8)
-    V = V.repeat(8, 1).view(V.shape[0], 8)
-    x = torch.Tensor([0, 0, -1, -1, -1, 1, 1, 1]).cuda()
-    y = torch.Tensor([-1, 1, 0, 1, -1, 0, 1, -1]).cuda()
-    res_x = U[:,].float() + x
-    res_y = V[:,].float() + y
-    return res_x, res_y
-
 def lipschitz_batch(matches_b, matches_b2, image_a_pred, image_b_pred, L, d, image_width=640, image_height=480):
     matches_b_descriptor = torch.index_select(image_b_pred, 1, matches_b)
     matches_b_descriptor = matches_b_descriptor.view(matches_b_descriptor.shape[1], 1, matches_b_descriptor.shape[2])
@@ -153,10 +153,15 @@ def lipschitz_batch(matches_b, matches_b2, image_a_pred, image_b_pred, L, d, ima
     U_b = best_match_indices%image_width
     V_b = best_match_indices/image_width
     U_b_neighbors, V_b_neighbors = local_crop(U_b,V_b)
+
     matches_b2 = U_b_neighbors%image_width + V_b_neighbors*image_width
     matches_b2 = matches_b2.long().flatten()
+    matches_b2 = torch.clamp(matches_b2, 0, image_width*image_height - 1)
     matches_b2_descriptor = torch.index_select(image_b_pred, 1, matches_b2)
-    print(matches_b2_descriptor.shape)
+    matches_b2_descriptor = matches_b2_descriptor.view(matches_b2_descriptor.shape[1], 1, 3)
+    image_a_pred_batch = image_a_pred.squeeze().repeat(matches_b2_descriptor.shape[1], 1).view(matches_b2_descriptor.shape[1], image_a_pred.shape[1], image_a_pred.shape[2])
+    descriptor_diffs = image_a_pred_batch - matches_b2_descriptor
+    print(descriptor_diffs.shape)
 
 def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, bimodal=False):
     lipschitz_batch(matches_b, None, image_a_pred, image_b_pred, 1, 10)
