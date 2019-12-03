@@ -99,7 +99,6 @@ def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, 
     norm_degree = 2
     image_a_pred_batch = image_a_pred.squeeze().repeat(matches_b.shape[0], 1).view(matches_b.shape[0], image_a_pred.shape[1], image_a_pred.shape[2])
     descriptor_diffs = image_a_pred_batch - matches_b_descriptor
-    print(descriptor_diffs.shape)
     norm_diffs = descriptor_diffs.norm(norm_degree, 2).pow(2)
     p_a = F.softmax(-1 * norm_diffs, dim=1).double() # compute current distribution
     q_a = gauss_2d_batch(image_width, image_height, sigma, matches_a%image_width, matches_a/image_width, masked_indices=masked_indices)
@@ -160,9 +159,13 @@ def lipschitz_batch(matches_b, matches_b2, image_a_pred, image_b_pred, L, d, ima
     matches_b2 = torch.clamp(matches_b2, 0, image_width*image_height - 1)
     matches_b2_descriptor = torch.index_select(image_b_pred, 1, matches_b2)
     matches_b2_descriptor = matches_b2_descriptor.view(matches_b2_descriptor.shape[1], 1, 3)
-    image_a_pred_batch = image_a_pred.squeeze().repeat(matches_b2_descriptor.shape[1], 1).view(matches_b2_descriptor.shape[1], image_a_pred.shape[1], image_a_pred.shape[2])
-    descriptor_diffs = image_a_pred_batch - matches_b2_descriptor
-    print(descriptor_diffs.shape)
+    image_a_pred_batch_2 = image_a_pred.squeeze().repeat(matches_b2_descriptor.shape[1], 1).view(matches_b2_descriptor.shape[1], image_a_pred.shape[1], image_a_pred.shape[2])
+    descriptor_diffs_2 = image_a_pred_batch_2 - matches_b2_descriptor
+    norm_diffs_2 = descriptor_diffs_2.norm(norm_degree, 2).pow(2)
+    best_match_indices_2 = torch.argmin(norm_diffs_2, dim=1)
+    print(best_match_indices_2.shape) # should be num_annotations * 8
+    U_b2 = best_match_indices_2%image_width
+    V_b2 = best_match_indices_2/image_width
 
 def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, bimodal=False):
     lipschitz_batch(matches_b, None, image_a_pred, image_b_pred, 1, 10)
