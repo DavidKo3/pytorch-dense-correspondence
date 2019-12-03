@@ -71,19 +71,20 @@ def flattened_mask_indices(img_mask, width=640, height=480, inverse=False):
 	return torch.nonzero(mask)
 
 def normalize(x):
-    return x/x.sum()
+    return F.normalize(x, p=1)
 
-def gauss_2d_dist(width, height, sigma, u, v, masked_indices=None, normalize=False):
-    mu_x = u
-    mu_y = v
-    X,Y=np.meshgrid(np.linspace(0,width,width),np.linspace(0,height,height))
-    G=np.exp(-((X-mu_x)**2+(Y-mu_y)**2)/(2.0*sigma**2)).ravel()
+def gauss_2d_batch(width, height, sigma, U, V, masked_indices=None, normalize=False):
+    U.unsqueeze_(1).unsqueeze_(2)
+    V.unsqueeze_(1).unsqueeze_(2)
+    X,Y = torch.meshgrid([torch.arange(0., width), torch.arange(0., height)])
+    X,Y = torch.transpose(X, 0, 1).cuda(), torch.transpose(Y, 0, 1).cuda()
+    G=torch.exp(-((X-U.float())**2+(Y-V.float())**2)/(2.0*sigma**2))
+    G=G.view(G.shape[0], G.shape[1]*G.shape[2])
     if masked_indices is not None:
-    	#G[masked_indices] = 1e-100 # zero probability on non-masked regions (not true 0 -- this made softmax numerically unstable)
-        G[masked_indices] = 0.0
+        G[:, masked_indices] = 0.0
     if normalize:
-    	return normalize(G)
-    return torch.from_numpy(G).double().cuda()
+        return normalize(G).double()
+    return G.double()
 
 def bimodal_gauss(G1, G2, normalize=False):
     bimodal = torch.max(G1, G2)
@@ -91,58 +92,33 @@ def bimodal_gauss(G1, G2, normalize=False):
         return normalize(bimodal)
     return bimodal
 
-def distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_b, sigma=2, masked_indices=None, symm_match_a=None, image_width=640, image_height=480):
-    match_b_descriptor = torch.index_select(image_b_pred, 1, match_b) # get descriptor for image_b at match_b 
+def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, sigma=2, masked_indices=None, symm_matches_a=None, image_width=640, image_height=480):
+    num_matches = matches_b.shape[0]
+    matches_b_descriptor = torch.index_select(image_b_pred, 1, matches_b)
+    matches_b_descriptor = matches_b_descriptor.view(matches_b_descriptor.shape[1], 1, matches_b_descriptor.shape[2])
     norm_degree = 2
-    descriptor_diffs = image_a_pred.squeeze() - match_b_descriptor.squeeze()
-    norm_diffs = descriptor_diffs.norm(norm_degree, 1).pow(2)
-    p_a = F.softmax(-1 * norm_diffs, dim=0).double() # compute current distribution
-    u = match_a.item()%image_width 
-    v = match_a.item()/image_width
-    q_a = gauss_2d_dist(image_width, image_height, sigma, u, v, masked_indices=masked_indices)
-    if symm_match_a is not None:
-	# Compute bimodal gauss if we have a symmetric pixel about the length of the rope
-	u_symm = symm_match_a.item()%image_width
-	v_symm = symm_match_a.item()/image_width
-	q_a_symm = gauss_2d_dist(image_width, image_height, sigma, u_symm, v_symm, masked_indices=masked_indices)
+    image_a_pred_batch = image_a_pred.squeeze().repeat(matches_b.shape[0], 1).view(matches_b.shape[0], image_a_pred.shape[1], image_a_pred.shape[2])
+    descriptor_diffs = image_a_pred_batch - matches_b_descriptor
+    norm_diffs = descriptor_diffs.norm(norm_degree, 2).pow(2)
+    p_a = F.softmax(-1 * norm_diffs, dim=1).double() # compute current distribution
+    q_a = gauss_2d_batch(image_width, image_height, sigma, matches_a%image_width, matches_a/image_width, masked_indices=masked_indices)
+    if symm_matches_a is not None:
+	q_a_symm = gauss_2d_batch(image_width, image_height, sigma, symm_matches_a%image_width, symm_matches_a/image_width, masked_indices=masked_indices)
 	q_a = bimodal_gauss(q_a, q_a_symm)
     q_a = normalize(q_a)
     q_a += 1e-300
-    loss = F.kl_div(q_a.log(), p_a, None, None, 'sum') # compute kl divergence loss
+    loss = F.kl_div(q_a.log(), p_a, None, None, 'sum')/matches_b_descriptor.shape[0]
     return loss
 
-def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, sigma=2, masked_indices=None, symm_matches_a=None, image_width=640, image_height=480):
-    matches_b_descriptor = torch.index_select(image_b_pred, 1, matches_b)
-    norm_degree = 2
-    #print(matches_b_descriptor.shape, image_a_pred.shape) ((1, 201, 3), (1, 307200, 3))
-    image_a_pred_batch = image_a_pred.squeeze().repeat(matches_b.shape[0], 1).view(matches_b.shape[0], image_a_pred.shape[1], image_a_pred.shape[2])
-    descriptor_diffs = image_a_pred_batch - matches_b_descriptor.view(matches_b_descriptor.shape[1], 1, matches_b_descriptor.shape[2])
-    norm_diffs = descriptor_diffs.norm(norm_degree, 2).pow(2)
-    #p_a = F.softmax(-1 * norm_diffs, dim=1).double() # compute current distribution
-    print(p_a.shape)
-
 def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, bimodal=False):
-    distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b)
-    loss = 0.0
     masked_indices_a = flattened_mask_indices(image_a_mask, inverse=True)
     masked_indices_b = flattened_mask_indices(image_b_mask, inverse=True)
-    #masked_indices_a = None
-    #masked_indices_b = None
-    count = 0
-    if bimodal:
-	for i in range(len(matches_a)):
-	    count += 1
-	    match_a, match_b = matches_a[i], matches_b[i]
-	    symm_match_a, symm_match_b = matches_a[-i-1], matches_b[-i-1]
-    	    loss += 0.5*(distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_b, masked_indices=masked_indices_a, symm_match_a=symm_match_a) \
-    	    + distributional_loss_single_match(image_b_pred, image_a_pred, match_b, match_a, masked_indices=masked_indices_b, symm_match_a=symm_match_b))
-    else:
-    	#for match_a, match_b in list(zip(matches_a, matches_b))[::3]:
-    	for match_a, match_b in list(zip(matches_a, matches_b)):
-    	    count += 1
-    	    loss += 0.5*(distributional_loss_single_match(image_a_pred, image_b_pred, match_a, match_b, masked_indices=masked_indices_a) \
-    	    + distributional_loss_single_match(image_b_pred, image_a_pred, match_b, match_a, masked_indices=masked_indices_b))
-    return loss/count
+    reverse_idxs = list(range(len(matches_a)-1, -1, -1))
+    symm_matches_a = matches_a.index_select(0, torch.LongTensor(reverse_idxs).cuda()) 
+    symm_matches_b = matches_b.index_select(0, torch.LongTensor(reverse_idxs).cuda()) 
+    L_a_b = distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, masked_indices=masked_indices_a, symm_matches_a=symm_matches_a)
+    L_b_a = distributional_loss_batch(image_b_pred, image_a_pred, matches_b, matches_a, masked_indices=masked_indices_b, symm_matches_a=symm_matches_b)
+    return 0.5*L_a_b + 0.5*L_b_a
 
 def get_within_scene_loss(pixelwise_contrastive_loss, image_a_pred, image_b_pred,
                                         matches_a,    matches_b,
