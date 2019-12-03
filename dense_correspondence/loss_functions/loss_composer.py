@@ -149,6 +149,7 @@ def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, mu, image_width=64
     image_a_pred_batch = image_a_pred.squeeze().repeat(matches_b.shape[0], 1).view(matches_b.shape[0], image_a_pred.shape[1], image_a_pred.shape[2])
     descriptor_diffs = image_a_pred_batch - matches_b_descriptor
     norm_diffs = descriptor_diffs.norm(norm_degree, 2).pow(2)
+    # Get the raw best matches for matches_b in image A
     pred_match_a_indices = torch.argmin(norm_diffs, dim=1) # in image A!!!
     pred_matches_a_U = pred_match_a_indices%image_width
     pred_matches_a_V = pred_match_a_indices/image_width
@@ -156,13 +157,17 @@ def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, mu, image_width=64
 
     matches_b_U = matches_b%image_width
     matches_b_V = matches_b/image_width
+    # Tile matches_b so that each pixel is repeated 8 times (used later on in computing norm diffs)
     matches_b = torch.cat((matches_b_U, matches_b_V)).repeat(1,8).view(-1,2)
-    neighbors_b_U, neighbors_b_V = local_crop(matches_b_U, matches_b_V) # compare with matches_b
+
+    # Get the local crop (8 neighboring pixels) PER match_b in matches_b
+    neighbors_b_U, neighbors_b_V = local_crop(matches_b_U, matches_b_V)
     neighbors_b = torch.cat((neighbors_b_U, neighbors_b_V)).view(-1, 2)
     #print(pred_matches_a_U.shape, matches_b_U.shape, neighbors_b_U.shape)
     #(201,), (201,), (201,8)
     neighbors_b_indices = neighbors_b_U%image_width + neighbors_b_V*image_width
     neighbors_b_indices = torch.clamp(neighbors_b_indices.long().flatten(), 0, image_width*image_height - 1)
+    # Get descriptors for all neighboring pixels (used for calculating each of their best matches in image A)
     neighbors_b_descriptor = torch.index_select(image_b_pred, 1, neighbors_b_indices)
     neighbors_b_descriptor = neighbors_b_descriptor.view(neighbors_b_descriptor.shape[1], 1, 3)
     #print(neighbors_b_descriptor.shape)
@@ -171,18 +176,24 @@ def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, mu, image_width=64
     image_a_pred_batch = image_a_pred.squeeze().repeat(neighbors_b_descriptor.shape[0], 1).view(neighbors_b_descriptor.shape[0], image_a_pred.shape[1], image_a_pred.shape[2])
     #print(image_a_pred_batch.shape)
     #(1608, 307200, 3)
+    # For all num_annotations*8 groups of neighbors, we compute the descriptor difference in image A
     neighbor_descriptor_diffs = image_a_pred_batch - neighbors_b_descriptor
     neighbor_norm_diffs = neighbor_descriptor_diffs.norm(norm_degree, 2).pow(2)
     #print(neighbor_norm_diffs.shape)
     #(1608, 307200)
+
+    # Get the best match predictions for neighbors_b
     pred_match_a_neighbor_idxs = torch.argmin(neighbor_norm_diffs, dim=1)
     pred_neighbors_a_U = pred_match_a_neighbor_idxs%image_width # (1608,)
     pred_neighbors_a_V = pred_match_a_neighbor_idxs/image_width # (1608,) compare this with pred_matches_a
     pred_neighbors_a = torch.cat((pred_neighbors_a_U, pred_neighbors_a_V)).view(-1, 2)
    
+    # Enforce that ||pred_matches_a - pred_neighbors_a|| <= L(||matches_b - neighbors_b||)
+    # --> final loss = abs(mu(||pred_matches_a - pred_neighbors_a|| - L||matches_b - neighbors_b||))
     L_a = torch.sqrt((pred_matches_a - pred_neighbors_a).pow(2).sum(1).double())
     L_b = torch.sqrt((matches_b.float() - neighbors_b).pow(2).sum(1).double())
-    loss = mu*(L_a + L * L_b).sum()
+    loss = torch.max(mu*(L_a - L * L_b).sum(), 0)
+    print(loss)
     return loss
     
 def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, bimodal=False):
