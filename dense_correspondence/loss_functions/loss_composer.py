@@ -119,29 +119,6 @@ def local_crop(U, V):
     res_y = V[:,].float() + y
     return res_x, res_y
 
-def lipschitz_single(match_b, match_b2, image_a_pred, image_b_pred, L, d, image_width=640, image_height=480):
-    match_b_descriptor = torch.index_select(image_b_pred, 1, match_b) # get descriptor for image_b at match_b
-    norm_degree = 2
-    descriptor_diffs = image_a_pred.squeeze() - match_b_descriptor.squeeze()
-    norm_diffs = descriptor_diffs.norm(norm_degree, 1).pow(2)
-    best_match_idx_flattened = torch.argmin(norm_diffs) #Adi: do we need to change the dim?
-    u_b = best_match_idx_flattened%image_width
-    v_b = best_match_idx_flattened/image_width
-    unraveled = torch.stack((u_b, v_b)).type(torch.float64)
-    uv_b = Variable(unraveled.cuda().squeeze(), requires_grad=True)
-
-    match_b2_descriptor = torch.index_select(image_b_pred, 1, match_b2) # get descriptor for image_b at match_b
-    descriptor_diffs_2 = image_a_pred.squeeze() - match_b2_descriptor.squeeze()
-    norm_diffs_2 = descriptor_diffs_2.norm(norm_degree, 1).pow(2)
-    best_match_idx_flattened_2 = torch.argmin(norm_diffs_2) #Adi: do we need to change the dim?
-    u_b2 = best_match_idx_flattened_2%image_width
-    v_b2 = best_match_idx_flattened_2/image_width
-    unraveled2 = torch.stack((u_b2, v_b2)).type(torch.float64)
-    uv_b2 = Variable(unraveled2.cuda().squeeze(), requires_grad=True)
-
-    constraint = torch.sqrt((uv_b - uv_b2).pow(2).sum(0)) - (L * d)
-    return constraint 
-
 def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, mu, image_width=640, image_height=480):
     matches_b_descriptor = torch.index_select(image_b_pred, 1, matches_b)
     matches_b_descriptor = matches_b_descriptor.view(matches_b_descriptor.shape[1], 1, matches_b_descriptor.shape[2])
@@ -192,20 +169,25 @@ def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, mu, image_width=64
     # --> final loss = abs(mu(||pred_matches_a - pred_neighbors_a|| - L||matches_b - neighbors_b||))
     L_a = torch.sqrt((pred_matches_a - pred_neighbors_a).pow(2).sum(1).double())
     L_b = torch.sqrt((matches_b.float() - neighbors_b).pow(2).sum(1).double())
-    loss = torch.max(mu*(L_a - L * L_b).sum(), 0)
-    print(loss)
+    loss = max(mu*(L_a - L * L_b).sum(), 0)
     return loss
     
 def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, bimodal=False):
-    lipschitz_batch(matches_b, image_a_pred, image_b_pred, 1, 1)
+    L_lip_a_b = lipschitz_batch(matches_b, image_a_pred, image_b_pred, 1, 0.005)
+    L_lip_b_a = lipschitz_batch(matches_a, image_b_pred, image_a_pred, 1, 0.005)
     masked_indices_a = flattened_mask_indices(image_a_mask, inverse=True)
     masked_indices_b = flattened_mask_indices(image_b_mask, inverse=True)
     reverse_idxs = list(range(len(matches_a)-1, -1, -1))
-    symm_matches_a = matches_a.index_select(0, torch.LongTensor(reverse_idxs).cuda()) 
-    symm_matches_b = matches_b.index_select(0, torch.LongTensor(reverse_idxs).cuda()) 
+    #symm_matches_a = matches_a.index_select(0, torch.LongTensor(reverse_idxs).cuda()) 
+    #symm_matches_b = matches_b.index_select(0, torch.LongTensor(reverse_idxs).cuda()) 
+    symm_matches_a = None
+    symm_matches_b = None
     L_a_b = distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, masked_indices=masked_indices_a, symm_matches_a=symm_matches_a)
     L_b_a = distributional_loss_batch(image_b_pred, image_a_pred, matches_b, matches_a, masked_indices=masked_indices_b, symm_matches_a=symm_matches_b)
-    return 0.5*L_a_b + 0.5*L_b_a
+    lipschitz = 0.5*L_lip_a_b + 0.5*L_lip_b_a
+    distributional = 0.5*L_a_b + 0.5*L_b_a 
+    total_loss = lipschitz + distributional
+    return total_loss, distributional, lipschitz
 
 def get_within_scene_loss(pixelwise_contrastive_loss, image_a_pred, image_b_pred,
                                         matches_a,    matches_b,
@@ -215,7 +197,6 @@ def get_within_scene_loss(pixelwise_contrastive_loss, image_a_pred, image_b_pred
     """
     Simple wrapper for pixelwise_contrastive_loss functions.  Args and return args documented above in get_loss()
     """
-    get_distributional_loss(image_a_pred, image_b_pred, matches_a, matches_b)
     pcl = pixelwise_contrastive_loss
 
     match_loss, masked_non_match_loss, num_masked_hard_negatives =\

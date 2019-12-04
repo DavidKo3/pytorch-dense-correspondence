@@ -347,7 +347,7 @@ class DenseCorrespondenceTraining(object):
                 #                                                                background_non_matches_a, background_non_matches_b,
                 #                                                                blind_non_matches_a, blind_non_matches_b)
                 
-		loss = loss_composer.get_distributional_loss(image_a_pred, image_b_pred, img_a_mask, img_b_mask, matches_a, matches_b, bimodal=True)
+		loss, distributional, lipschitz = loss_composer.get_distributional_loss(image_a_pred, image_b_pred, img_a_mask, img_b_mask, matches_a, matches_b, bimodal=True)
 
 		print "loss:", loss
                 loss.backward()
@@ -356,70 +356,7 @@ class DenseCorrespondenceTraining(object):
                 elapsed = time.time() - start_iter
                 print "iteration %d took %.3f seconds" %(loss_current_iteration, elapsed)
 
-
-                def update_plots(loss, match_loss, masked_non_match_loss, background_non_match_loss, blind_non_match_loss):
-                    """
-                    Updates the tensorboard plots with current loss function information
-                    :return:
-                    :rtype:
-                    """
-
-
-
-                    learning_rate = DenseCorrespondenceTraining.get_learning_rate(optimizer)
-                    self._logging_dict['train']['learning_rate'].append(learning_rate)
-                    self._tensorboard_logger.log_value("learning rate", learning_rate, loss_current_iteration)
-
-
-                    # Don't update any plots if the entry corresponding to that term
-                    # is a zero loss
-                    #if not loss_composer.is_zero_loss(match_loss):
-                    #self._logging_dict['train']['match_loss'].append(match_loss.data[0])
-                    self._logging_dict['train']['match_loss'].append(match_loss.item())
-                    self._tensorboard_logger.log_value("train match loss", match_loss.item(), loss_current_iteration)
-
-                    #if not loss_composer.is_zero_loss(masked_non_match_loss):
-                    self._logging_dict['train']['masked_non_match_loss'].append(masked_non_match_loss.item())
-
-                    self._tensorboard_logger.log_value("train masked non match loss", masked_non_match_loss.item(), loss_current_iteration)
-
-                    #if not loss_composer.is_zero_loss(background_non_match_loss):
-                    self._logging_dict['train']['background_non_match_loss'].append(background_non_match_loss.item())
-                    self._tensorboard_logger.log_value("train background non match loss", background_non_match_loss.item(), loss_current_iteration)
-
-                    #if not loss_composer.is_zero_loss(blind_non_match_loss):
-
-                    if data_type == SpartanDatasetDataType.SINGLE_OBJECT_WITHIN_SCENE:
-                    	self._tensorboard_logger.log_value("train blind SINGLE_OBJECT_WITHIN_SCENE", blind_non_match_loss.item(), loss_current_iteration)
-
-                    if data_type == SpartanDatasetDataType.DIFFERENT_OBJECT:
-                        self._tensorboard_logger.log_value("train blind DIFFERENT_OBJECT", blind_non_match_loss.item(), loss_current_iteration)
-
-
-                    # loss is never zero
-                    if data_type == SpartanDatasetDataType.SINGLE_OBJECT_WITHIN_SCENE:
-                        print "logging train loss"
-                        self._tensorboard_logger.log_value("train loss SINGLE_OBJECT_WITHIN_SCENE", loss.item(), loss_current_iteration)
-
-                    elif data_type == SpartanDatasetDataType.DIFFERENT_OBJECT:
-                        self._tensorboard_logger.log_value("train loss DIFFERENT_OBJECT", loss.item(), loss_current_iteration)
-
-                    elif data_type == SpartanDatasetDataType.SINGLE_OBJECT_ACROSS_SCENE:
-                        self._tensorboard_logger.log_value("train loss SINGLE_OBJECT_ACROSS_SCENE", loss.item(), loss_current_iteration)
-
-                    elif data_type == SpartanDatasetDataType.MULTI_OBJECT:
-                        self._tensorboard_logger.log_value("train loss MULTI_OBJECT", loss.item(), loss_current_iteration)
-                    
-                    elif data_type == SpartanDatasetDataType.SYNTHETIC_MULTI_OBJECT:
-                        self._tensorboard_logger.log_value("train loss SYNTHETIC_MULTI_OBJECT", loss.item(), loss_current_iteration)
-                    else:
-                        raise ValueError("unknown data type")
-
-
-                    if data_type == SpartanDatasetDataType.DIFFERENT_OBJECT:
-                        self._tensorboard_logger.log_value("train different object", loss.item(), loss_current_iteration)
-
-                def update_plot(loss):
+                def update_plot(loss, distributional=None, lipschitz=None):
                     """
                     Updates the tensorboard plots with current loss function information
                     :return:
@@ -433,9 +370,13 @@ class DenseCorrespondenceTraining(object):
                     if data_type == SpartanDatasetDataType.SINGLE_OBJECT_WITHIN_SCENE:
                         print "logging train loss"
                         self._tensorboard_logger.log_value("train loss SINGLE_OBJECT_WITHIN_SCENE", loss.item(), loss_current_iteration)
+                    if distributional is not None:
+                        self._tensorboard_logger.log_value("train loss DISTRIBUTIONAL", distributional.item(), loss_current_iteration)
+                    if distributional is not None:
+                        self._tensorboard_logger.log_value("train loss LIPSCHITZ", lipschitz.item(), loss_current_iteration)
 
                 #update_plots(loss, match_loss, masked_non_match_loss, background_non_match_loss, blind_non_match_loss)
-                update_plot(loss)
+                update_plot(loss, distributional=distributional, lipschitz=lipschitz)
 
                 if loss_current_iteration % save_rate == 0:
                     self.save_network(dcn, optimizer, loss_current_iteration, logging_dict=self._logging_dict)
