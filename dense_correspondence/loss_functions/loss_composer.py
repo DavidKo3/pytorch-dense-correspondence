@@ -110,16 +110,6 @@ def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, 
     loss = F.kl_div(q_a.log(), p_a, None, None, 'sum')/matches_b_descriptor.shape[0]
     return loss
 
-def local_crop(U, V): 
-    '''Takes in U: (201,), V: (201,), outputs (201,8), (201,8)'''
-    U = U.repeat(8, 1).view(U.shape[0], 8)
-    V = V.repeat(8, 1).view(V.shape[0], 8)
-    x = torch.Tensor([0, 0, -1, -1, -1, 1, 1, 1]).cuda()
-    y = torch.Tensor([-1, 1, 0, 1, -1, 0, 1, -1]).cuda()
-    res_x = U[:,].float() + x
-    res_y = V[:,].float() + y
-    return res_x, res_y
-
 def knn(k, data, points):
     data = data.repeat(points.shape[0], 1).view(points.shape[0], data.shape[0], data.shape[1])
     data = data.cuda().float()
@@ -129,6 +119,9 @@ def knn(k, data, points):
     result = data[0, knn.indices]
     res_x, res_y = result[:, :, 0], result[:, :, 1]
     return res_x, res_y
+
+def expectation(dist, points):
+    
 
 def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, k, mu, image_width=640, image_height=480):
     '''
