@@ -111,6 +111,7 @@ def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, 
     return loss
 
 def local_crop(U, V): 
+    '''Takes in U: (201,), V: (201,), outputs (201,8), (201,8)'''
     U = U.repeat(8, 1).view(U.shape[0], 8)
     V = V.repeat(8, 1).view(V.shape[0], 8)
     x = torch.Tensor([0, 0, -1, -1, -1, 1, 1, 1]).cuda()
@@ -119,8 +120,24 @@ def local_crop(U, V):
     res_y = V[:,].float() + y
     return res_x, res_y
 
-def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, mu, image_width=640, image_height=480):
-    matches_b_descriptor = torch.index_select(image_b_pred, 1, matches_b)
+def knn(k, data, points):
+    data = data.repeat(points.shape[0], 1).view(points.shape[0], data.shape[0], data.shape[1])
+    data = data.cuda().float()
+    points = points.view(points.shape[0], 1, points.shape[1])
+    dist = torch.norm(data - points.float(), dim=2, p=None)
+    knn = dist.topk(k, largest=False)
+    result = data[0, knn.indices]
+    res_x, res_y = result[:, :, 0], result[:, :, 1]
+    return res_x, res_y
+
+def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, k, mu, image_width=640, image_height=480):
+    '''
+    N = length of matches_b (num annotations)
+    L, mu = Lipschitz params
+    k = used in kNN (to get local crop) around each match in matches_b
+    '''
+    # Compute descriptors for each match in matches_b
+    matches_b_descriptor = torch.index_select(image_b_pred, 1, matches_b) 
     matches_b_descriptor = matches_b_descriptor.view(matches_b_descriptor.shape[1], 1, matches_b_descriptor.shape[2])
     norm_degree = 2
     image_a_pred_batch = image_a_pred.squeeze().repeat(matches_b.shape[0], 1).view(matches_b.shape[0], image_a_pred.shape[1], image_a_pred.shape[2])
@@ -130,51 +147,44 @@ def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, mu, image_width=64
     pred_match_a_indices = torch.argmin(norm_diffs, dim=1) # in image A!!!
     pred_matches_a_U = pred_match_a_indices%image_width
     pred_matches_a_V = pred_match_a_indices/image_width
-    pred_matches_a = torch.cat((pred_matches_a_U, pred_matches_a_V)).repeat(1,8).view(-1,2)
+    pred_matches_a = torch.cat((pred_matches_a_U, pred_matches_a_V)).repeat(1,k).view(-1,2)
 
     matches_b_U = matches_b%image_width
     matches_b_V = matches_b/image_width
-    # Tile matches_b so that each pixel is repeated 8 times (used later on in computing norm diffs)
-    matches_b = torch.cat((matches_b_U, matches_b_V)).repeat(1,8).view(-1,2)
+    # Tile matches_b so that each pixel is repeated K times (used later on in computing ground truth distance between matches_b and its neighbors)
+    matches_b = torch.cat((matches_b_U, matches_b_V)).repeat(1,k).view(-1,2)
 
-    # Get the local crop (8 neighboring pixels) PER match_b in matches_b
-    neighbors_b_U, neighbors_b_V = local_crop(matches_b_U, matches_b_V)
+    # Get the local crop PER match_b in matches_b 
+    neighbors_b_U, neighbors_b_V = knn(k, torch.ones((image_width,image_height)).nonzero().float(), torch.cat((matches_b_U, matches_b_V)).view(-1,2))
+
     neighbors_b = torch.cat((neighbors_b_U, neighbors_b_V)).view(-1, 2)
-    #print(pred_matches_a_U.shape, matches_b_U.shape, neighbors_b_U.shape)
-    #(201,), (201,), (201,8)
     neighbors_b_indices = neighbors_b_U%image_width + neighbors_b_V*image_width
     neighbors_b_indices = torch.clamp(neighbors_b_indices.long().flatten(), 0, image_width*image_height - 1)
     # Get descriptors for all neighboring pixels (used for calculating each of their best matches in image A)
     neighbors_b_descriptor = torch.index_select(image_b_pred, 1, neighbors_b_indices)
     neighbors_b_descriptor = neighbors_b_descriptor.view(neighbors_b_descriptor.shape[1], 1, 3)
-    #print(neighbors_b_descriptor.shape)
-    #(1608, 1, 3)
 
     image_a_pred_batch = image_a_pred.squeeze().repeat(neighbors_b_descriptor.shape[0], 1).view(neighbors_b_descriptor.shape[0], image_a_pred.shape[1], image_a_pred.shape[2])
-    #print(image_a_pred_batch.shape)
-    #(1608, 307200, 3)
-    # For all num_annotations*8 groups of neighbors, we compute the descriptor difference in image A
+    # For all N*K neighbors, we compute the descriptor difference in image A
     neighbor_descriptor_diffs = image_a_pred_batch - neighbors_b_descriptor
     neighbor_norm_diffs = neighbor_descriptor_diffs.norm(norm_degree, 2).pow(2)
-    #print(neighbor_norm_diffs.shape)
-    #(1608, 307200)
 
     # Get the best match predictions for neighbors_b
     pred_match_a_neighbor_idxs = torch.argmin(neighbor_norm_diffs, dim=1)
-    pred_neighbors_a_U = pred_match_a_neighbor_idxs%image_width # (1608,)
-    pred_neighbors_a_V = pred_match_a_neighbor_idxs/image_width # (1608,) compare this with pred_matches_a
+    pred_neighbors_a_U = pred_match_a_neighbor_idxs%image_width 
+    pred_neighbors_a_V = pred_match_a_neighbor_idxs/image_width 
     pred_neighbors_a = torch.cat((pred_neighbors_a_U, pred_neighbors_a_V)).view(-1, 2)
    
     # Enforce that ||pred_matches_a - pred_neighbors_a|| <= L(||matches_b - neighbors_b||)
-    # --> final loss = abs(mu(||pred_matches_a - pred_neighbors_a|| - L||matches_b - neighbors_b||))
+    # --> final loss = relu(mu(||pred_matches_a - pred_neighbors_a|| - L||matches_b - neighbors_b||))
     L_a = torch.sqrt((pred_matches_a - pred_neighbors_a).pow(2).sum(1).double())
     L_b = torch.sqrt((matches_b.float() - neighbors_b).pow(2).sum(1).double())
     loss = max(mu*(L_a - L * L_b).sum(), 0)
     return loss
     
 def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, bimodal=False):
-    L_lip_a_b = lipschitz_batch(matches_b, image_a_pred, image_b_pred, 1, 0.005)
-    L_lip_b_a = lipschitz_batch(matches_a, image_b_pred, image_a_pred, 1, 0.005)
+    L_lip_a_b = lipschitz_batch(matches_b, image_a_pred, image_b_pred, 1, 10, 0.005)
+    L_lip_b_a = lipschitz_batch(matches_a, image_b_pred, image_a_pred, 1, 10, 0.005)
     masked_indices_a = flattened_mask_indices(image_a_mask, inverse=True)
     masked_indices_b = flattened_mask_indices(image_b_mask, inverse=True)
     reverse_idxs = list(range(len(matches_a)-1, -1, -1))
