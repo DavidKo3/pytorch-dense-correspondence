@@ -23,8 +23,8 @@ class DenseCorrespondenceNetwork(nn.Module):
 
     IMAGE_TO_TENSOR = valid_transform = transforms.Compose([transforms.ToTensor(), ])
 
-    def __init__(self, fcn, descriptor_dimension, image_width=640,
-                 image_height=480, normalize=True):
+    def __init__(self, fcn, descriptor_dimension, image_width=56,
+                 image_height=56, normalize=True):
         """
 
         :param fcn:
@@ -45,6 +45,9 @@ class DenseCorrespondenceNetwork(nn.Module):
         self._descriptor_dimension = descriptor_dimension
         self._image_width = image_width
         self._image_height = image_height
+
+        self._image_width = 56
+        self._image_height = 56
 
         # this defaults to the identity transform
         self._image_mean = np.zeros(3)

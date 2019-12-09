@@ -15,4 +15,7 @@ jensen:
     path_to_data_directory: '/raid/priya/data'
   brijen:
     path_to_data_diretory: '/raid/brijen/data'
+  adi:
+    path_to_data_diretory: '/raid/adi/data'
+
 

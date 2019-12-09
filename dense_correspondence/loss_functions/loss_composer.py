@@ -61,7 +61,7 @@ def get_loss(pixelwise_contrastive_loss, match_type,
     else:
         raise ValueError("Should only have above scenes?")
 
-def flattened_mask_indices(img_mask, width=640, height=480, inverse=False):
+def flattened_mask_indices(img_mask, width=56, height=56, inverse=False):
     mask = img_mask.view(width*height,1).squeeze(1)
     if inverse:
     	inv_mask = 1 - mask
@@ -77,6 +77,8 @@ def gauss_2d_batch(width, height, sigma, U, V, masked_indices=None, normalize=Fa
     U.unsqueeze_(1).unsqueeze_(2)
     V.unsqueeze_(1).unsqueeze_(2)
     X,Y = torch.meshgrid([torch.arange(0., width), torch.arange(0., height)])
+    print(X)
+    print(Y)
     X,Y = torch.transpose(X, 0, 1).cuda(), torch.transpose(Y, 0, 1).cuda()
     G=torch.exp(-((X-U.float())**2+(Y-V.float())**2)/(2.0*sigma**2))
     G=G.view(G.shape[0], G.shape[1]*G.shape[2])
@@ -92,7 +94,7 @@ def bimodal_gauss(G1, G2, normalize=False):
         return normalize(bimodal)
     return bimodal
 
-def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, sigma=2, masked_indices=None, symm_matches_a=None, image_width=640, image_height=480):
+def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, sigma=2, masked_indices=None, symm_matches_a=None, image_width=56, image_height=56):
     num_matches = matches_b.shape[0]
     matches_b_descriptor = torch.index_select(image_b_pred, 1, matches_b)
     matches_b_descriptor = matches_b_descriptor.view(matches_b_descriptor.shape[1], 1, matches_b_descriptor.shape[2])
@@ -119,7 +121,17 @@ def local_crop(U, V):
     res_y = V[:,].float() + y
     return res_x, res_y
 
-def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, mu, image_width=640, image_height=480):
+def knn(k, data, points):
+    data = data.repeat(points.shape[0], 1).view(points.shape[0], data.shape[0], data.shape[1])
+    data = data.cuda().float()
+    points = points.view(points.shape[0], 1, points.shape[1])
+    dist = torch.norm(data - points.float(), dim=2, p=None)
+    knn = dist.topk(k, largest=False)
+    result = data[0, knn.indices]
+    res_x, res_y = result[:, :, 0], result[:, :, 1]
+    return res_x, res_y
+
+def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, k, mu, d_action, image_width=640, image_height=480):
     matches_b_descriptor = torch.index_select(image_b_pred, 1, matches_b)
     matches_b_descriptor = matches_b_descriptor.view(matches_b_descriptor.shape[1], 1, matches_b_descriptor.shape[2])
     norm_degree = 2
@@ -130,25 +142,22 @@ def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, mu, image_width=64
     pred_match_a_indices = torch.argmin(norm_diffs, dim=1) # in image A!!!
     pred_matches_a_U = pred_match_a_indices%image_width
     pred_matches_a_V = pred_match_a_indices/image_width
-    pred_matches_a = torch.cat((pred_matches_a_U, pred_matches_a_V)).repeat(1,8).view(-1,2)
+    pred_matches_a = torch.cat((pred_matches_a_U, pred_matches_a_V)).repeat(1,k).view(-1,2)
 
     matches_b_U = matches_b%image_width
     matches_b_V = matches_b/image_width
     # Tile matches_b so that each pixel is repeated 8 times (used later on in computing norm diffs)
-    matches_b = torch.cat((matches_b_U, matches_b_V)).repeat(1,8).view(-1,2)
+    matches_b = torch.cat((matches_b_U, matches_b_V)).repeat(1,k).view(-1,2)
 
-    # Get the local crop (8 neighboring pixels) PER match_b in matches_b
-    neighbors_b_U, neighbors_b_V = local_crop(matches_b_U, matches_b_V)
+    # Get the local crop PER match_b in matches_b
+    neighbors_b_U, neighbors_b_V = knn(k, torch.ones((image_width,image_height)).nonzero().float(), torch.cat((matches_b_U, matches_b_V)).view(-1,2))
+
     neighbors_b = torch.cat((neighbors_b_U, neighbors_b_V)).view(-1, 2)
-    #print(pred_matches_a_U.shape, matches_b_U.shape, neighbors_b_U.shape)
-    #(201,), (201,), (201,8)
     neighbors_b_indices = neighbors_b_U%image_width + neighbors_b_V*image_width
     neighbors_b_indices = torch.clamp(neighbors_b_indices.long().flatten(), 0, image_width*image_height - 1)
     # Get descriptors for all neighboring pixels (used for calculating each of their best matches in image A)
     neighbors_b_descriptor = torch.index_select(image_b_pred, 1, neighbors_b_indices)
     neighbors_b_descriptor = neighbors_b_descriptor.view(neighbors_b_descriptor.shape[1], 1, 3)
-    #print(neighbors_b_descriptor.shape)
-    #(1608, 1, 3)
 
     image_a_pred_batch = image_a_pred.squeeze().repeat(neighbors_b_descriptor.shape[0], 1).view(neighbors_b_descriptor.shape[0], image_a_pred.shape[1], image_a_pred.shape[2])
     #print(image_a_pred_batch.shape)
@@ -169,12 +178,20 @@ def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, mu, image_width=64
     # --> final loss = abs(mu(||pred_matches_a - pred_neighbors_a|| - L||matches_b - neighbors_b||))
     L_a = torch.sqrt((pred_matches_a - pred_neighbors_a).pow(2).sum(1).double())
     L_b = torch.sqrt((matches_b.float() - neighbors_b).pow(2).sum(1).double())
-    loss = max(mu*(L_a - L * L_b).sum(), 0)
-    return loss
+    #loss = max(mu*(L_a - L * L_b).sum(), 0)
+    loss = F.relu(mu*(L_a - L * L_b)).sum()
+
+    #Adi: Time consistency penalty
+    # Enforce that ||pred_matches_a - matches_b|| <= L*d_action where d_action is the max distance that the pixel is allowed to move
+    L_a_t = torch.sqrt((pred_matches_a - matches_b).pow(2).sum(1).double()) 
+    time_loss = F.relu(mu*(L_a_t - L * d_action)).sum()
+
+    return loss, time_loss
+
     
 def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, bimodal=False):
-    L_lip_a_b = lipschitz_batch(matches_b, image_a_pred, image_b_pred, 1, 0.005)
-    L_lip_b_a = lipschitz_batch(matches_a, image_b_pred, image_a_pred, 1, 0.005)
+    #L_lip_a_b = lipschitz_batch(matches_b, image_a_pred, image_b_pred, 1, 0.005)
+    #L_lip_b_a = lipschitz_batch(matches_a, image_b_pred, image_a_pred, 1, 0.005)
     masked_indices_a = flattened_mask_indices(image_a_mask, inverse=True)
     masked_indices_b = flattened_mask_indices(image_b_mask, inverse=True)
     reverse_idxs = list(range(len(matches_a)-1, -1, -1))
@@ -182,12 +199,15 @@ def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_ma
     #symm_matches_b = matches_b.index_select(0, torch.LongTensor(reverse_idxs).cuda()) 
     symm_matches_a = None
     symm_matches_b = None
-    L_a_b = distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, masked_indices=masked_indices_a, symm_matches_a=symm_matches_a)
-    L_b_a = distributional_loss_batch(image_b_pred, image_a_pred, matches_b, matches_a, masked_indices=masked_indices_b, symm_matches_a=symm_matches_b)
-    lipschitz = 0.5*L_lip_a_b + 0.5*L_lip_b_a
+    #L_a_b = distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, masked_indices=masked_indices_a, symm_matches_a=symm_matches_a)
+    #L_b_a = distributional_loss_batch(image_b_pred, image_a_pred, matches_b, matches_a, masked_indices=masked_indices_b, symm_matches_a=symm_matches_b)
+    L_a_b = distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, masked_indices=masked_indices_a)
+    L_b_a = distributional_loss_batch(image_b_pred, image_a_pred, matches_b, matches_a, masked_indices=masked_indices_b)
+    #lipschitz = 0.5*L_lip_a_b + 0.5*L_lip_b_a
     distributional = 0.5*L_a_b + 0.5*L_b_a 
-    total_loss = lipschitz + distributional
-    return total_loss, distributional, lipschitz
+    #total_loss = lipschitz + distributional
+    #return total_loss, distributional, lipschitz
+    return distributional
 
 def get_within_scene_loss(pixelwise_contrastive_loss, image_a_pred, image_b_pred,
                                         matches_a,    matches_b,

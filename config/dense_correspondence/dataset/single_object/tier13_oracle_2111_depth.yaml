@@ -1,0 +1,6 @@
+logs_root_path: code/data_volume/fabric_data/logs_proto
+object_id: "tier13_oracle_2111_depth"
+train:
+- "tier13_oracle_2111_depth"
+test:
+- "tier13_oracle_2111_depth_test"

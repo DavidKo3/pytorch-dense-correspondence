@@ -1,0 +1,6 @@
+logs_root_path: code/data_volume/fabric_data/logs_proto
+
+single_object_scenes_config_files:
+- tier13_oracle_2111.yaml
+
+multi_object_scenes_config_files: []

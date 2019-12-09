@@ -1,0 +1,6 @@
+logs_root_path: code/data_volume/fabric_data/logs_proto
+object_id: "tier3_oracle_domrand_3137_depth"
+train:
+- "tier3_oracle_domrand_3137_depth"
+test:
+- "tier3_oracle_domrand_3137_depth_test"

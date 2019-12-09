@@ -9,7 +9,7 @@ import getpass
 
 if __name__=="__main__":
     user_name = getpass.getuser()
-    default_image_name = 'priya-pytorch-dense-correspondence'
+    default_image_name = 'adi-pytorch-dense-correspondence'
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--image", type=str,
         help="(required) name of the image that this container is derived from", default=default_image_name)
@@ -52,8 +52,8 @@ if __name__=="__main__":
     # uncomment below to mount your data volume
     config_yaml = yaml.load(file(config_file))
     host_name = socket.gethostname()
-    cmd += " -v %s:%s/data_volume " %(config_yaml[host_name][user_name]['path_to_data_directory'], dense_correspondence_source_dir)
-#    cmd += " -v %s:%s/data_volume " %('/raid/priya/data', dense_correspondence_source_dir)
+    #cmd += " -v %s:%s/data_volume " %(config_yaml[host_name][user_name]['path_to_data_directory'], dense_correspondence_source_dir)
+    cmd += " -v %s:%s/data_volume " %('/raid/adi/data', dense_correspondence_source_dir)
 
     # expose UDP ports
     cmd += " -p 8888:8888 "

@@ -1,0 +1,6 @@
+logs_root_path: code/data_volume/fabric_data/logs_proto
+object_id: "ryan_data"
+train:
+- "ryan_data"
+test:
+- "ryan_data_test"

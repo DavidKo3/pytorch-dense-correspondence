@@ -1,0 +1,6 @@
+logs_root_path: code/data_volume/fabric_data/logs_proto
+object_id: "tier3_oracle_840_56x56"
+train:
+- "tier3_oracle_840_56x56"
+test:
+- "tier3_oracle_840_56x56_test"

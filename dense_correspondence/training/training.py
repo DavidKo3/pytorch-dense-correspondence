@@ -347,7 +347,8 @@ class DenseCorrespondenceTraining(object):
                 #                                                                background_non_matches_a, background_non_matches_b,
                 #                                                                blind_non_matches_a, blind_non_matches_b)
                 
-		loss, distributional, lipschitz = loss_composer.get_distributional_loss(image_a_pred, image_b_pred, img_a_mask, img_b_mask, matches_a, matches_b, bimodal=True)
+		#loss, distributional, lipschitz = loss_composer.get_distributional_loss(image_a_pred, image_b_pred, img_a_mask, img_b_mask, matches_a, matches_b, bimodal=True)
+		loss = loss_composer.get_distributional_loss(image_a_pred, image_b_pred, img_a_mask, img_b_mask, matches_a, matches_b, bimodal=False)
 
 		print "loss:", loss
                 loss.backward()
@@ -356,7 +357,26 @@ class DenseCorrespondenceTraining(object):
                 elapsed = time.time() - start_iter
                 print "iteration %d took %.3f seconds" %(loss_current_iteration, elapsed)
 
-                def update_plot(loss, distributional=None, lipschitz=None):
+                #def update_plot(loss, distributional=None, lipschitz=None):
+                #    """
+                #    Updates the tensorboard plots with current loss function information
+                #    :return:
+                #    :rtype:
+                #    """
+                #    learning_rate = DenseCorrespondenceTraining.get_learning_rate(optimizer)
+                #    self._logging_dict['train']['learning_rate'].append(learning_rate)
+                #    self._tensorboard_logger.log_value("learning rate", learning_rate, loss_current_iteration)
+
+                #    # loss is never zero
+                #    if data_type == SpartanDatasetDataType.SINGLE_OBJECT_WITHIN_SCENE:
+                #        print "logging train loss"
+                #        self._tensorboard_logger.log_value("train loss SINGLE_OBJECT_WITHIN_SCENE", loss.item(), loss_current_iteration)
+                #    if distributional is not None:
+                #        self._tensorboard_logger.log_value("train loss DISTRIBUTIONAL", distributional.item(), loss_current_iteration)
+                #    if distributional is not None:
+                #        self._tensorboard_logger.log_value("train loss LIPSCHITZ", lipschitz.item(), loss_current_iteration)
+
+                def update_plot(distributional=None, lipschitz=None):
                     """
                     Updates the tensorboard plots with current loss function information
                     :return:
@@ -369,14 +389,16 @@ class DenseCorrespondenceTraining(object):
                     # loss is never zero
                     if data_type == SpartanDatasetDataType.SINGLE_OBJECT_WITHIN_SCENE:
                         print "logging train loss"
-                        self._tensorboard_logger.log_value("train loss SINGLE_OBJECT_WITHIN_SCENE", loss.item(), loss_current_iteration)
+                        #self._tensorboard_logger.log_value("train loss SINGLE_OBJECT_WITHIN_SCENE", loss.item(), loss_current_iteration)
                     if distributional is not None:
                         self._tensorboard_logger.log_value("train loss DISTRIBUTIONAL", distributional.item(), loss_current_iteration)
-                    if distributional is not None:
-                        self._tensorboard_logger.log_value("train loss LIPSCHITZ", lipschitz.item(), loss_current_iteration)
+                    #if distributional is not None:
+                    #    self._tensorboard_logger.log_value("train loss LIPSCHITZ", lipschitz.item(), loss_current_iteration)
 
                 #update_plots(loss, match_loss, masked_non_match_loss, background_non_match_loss, blind_non_match_loss)
-                update_plot(loss, distributional=distributional, lipschitz=lipschitz)
+                #update_plot(loss, distributional=distributional, lipschitz=lipschitz)
+                #update_plot(distributional=distributional)
+                update_plot(distributional=loss)
 
                 if loss_current_iteration % save_rate == 0:
                     self.save_network(dcn, optimizer, loss_current_iteration, logging_dict=self._logging_dict)
