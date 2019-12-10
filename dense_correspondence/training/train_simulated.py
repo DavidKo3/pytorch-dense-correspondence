@@ -20,7 +20,7 @@ parser.add_argument('--dim', type=int, default=3)
 parser.add_argument('--iters', type=int, default=3500)
 parser.add_argument('--normalization', type=str, default="standard") # unit or standard
 parser.add_argument('--depth_invariant', action='store_true')
-parser.add_argument('--gpu_id', type=str, default='0')
+parser.add_argument('--gpu_id', type=str, default='2')
 parser.add_argument("--resume", help="resume from checkpoint params",
                     action="store_true")
 args = parser.parse_args()
