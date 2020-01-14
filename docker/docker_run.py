@@ -9,7 +9,7 @@ import getpass
 
 if __name__=="__main__":
     user_name = getpass.getuser()
-    default_image_name = 'priya-pytorch-dense-correspondence'
+    default_image_name = '%s-pytorch-dense-correspondence'%user_name
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--image", type=str,
         help="(required) name of the image that this container is derived from", default=default_image_name)
