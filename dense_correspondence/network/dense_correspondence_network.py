@@ -17,8 +17,6 @@ from torch.autograd import Variable
 import pytorch_segmentation_detection.models.resnet_dilated as resnet_dilated
 from dense_correspondence.dataset.spartan_dataset_masked import SpartanDataset
 
-
-
 class DenseCorrespondenceNetwork(nn.Module):
 
     IMAGE_TO_TENSOR = valid_transform = transforms.Compose([transforms.ToTensor(), ])
@@ -56,7 +54,6 @@ class DenseCorrespondenceNetwork(nn.Module):
 
         self._descriptor_image_stats = None
         self._normalize = normalize
-
 
     @property
     def fcn(self):
@@ -216,9 +213,6 @@ class DenseCorrespondenceNetwork(nn.Module):
             print "normalizing descriptor norm"
             norm = torch.norm(res, 2, 1) # [N,1,H,W]
             res = res/norm
-
-
-
         return res
 
     def forward_single_image_tensor(self, img_tensor):
@@ -247,7 +241,6 @@ class DenseCorrespondenceNetwork(nn.Module):
         res = self.forward(img_tensor) # shape [1,D,H,W]
         # print "res.shape 1", res.shape
 
-
         res = res.squeeze(0) # shape [D,H,W]
         # print "res.shape 2", res.shape
 
@@ -255,8 +248,6 @@ class DenseCorrespondenceNetwork(nn.Module):
         # print "res.shape 3", res.shape
 
         return res
-
-
 
     def process_network_output(self, image_pred, N):
         """
@@ -323,10 +314,7 @@ class DenseCorrespondenceNetwork(nn.Module):
         :rtype:
         """
 
-#        fcn = resnet_dilated.Resnet34_8s(num_classes=config['descriptor_dimension'])
         fcn = resnet_dilated.Resnet34_8s(num_classes=config['descriptor_dimension'])
-	
-
 
         if 'normalize' in config:
             normalize = config['normalize']
@@ -410,13 +398,6 @@ class DenseCorrespondenceNetwork(nn.Module):
             print "height: ", height
             print "width: ", width
             print "res_b.shape: ", res_b.shape
-
-
-        # non-vectorized version
-        # norm_diffs = np.zeros([height, width])
-        # for i in xrange(0, height):
-        #     for j in xrange(0, width):
-        #         norm_diffs[i,j] = np.linalg.norm(res_b[i,j] - descriptor_at_pixel)**2
 
         norm_diffs = np.sqrt(np.sum(np.square(res_b - descriptor_at_pixel), axis=2))
 

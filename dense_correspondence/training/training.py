@@ -19,9 +19,6 @@ import torch.optim as optim
 
 import tensorboard_logger
 
-
-
-
 # dense correspondence
 import dense_correspondence_manipulation.utils.utils as utils
 utils.add_dense_correspondence_to_python_path()
@@ -45,7 +42,7 @@ from dense_correspondence.evaluation.evaluation import DenseCorrespondenceEvalua
 
 class DenseCorrespondenceTraining(object):
 
-    def __init__(self, config=None, dataset=None, dataset_test=None):
+    def __init__(self, contrastive, config=None, dataset=None, dataset_test=None):
         if config is None:
             config = DenseCorrespondenceTraining.load_default_config()
 
@@ -55,6 +52,7 @@ class DenseCorrespondenceTraining(object):
 
         self._dcn = None
         self._optimizer = None
+        self._contrastive = contrastive
 
     def setup(self):
         """
@@ -285,18 +283,14 @@ class DenseCorrespondenceTraining(object):
         if not use_pretrained:
             self.save_network(dcn, optimizer, 0)
 
+	mu = 0.005
+
         for epoch in range(50):  # loop over the dataset multiple times
             for i, data in enumerate(self._data_loader, 0):
                 loss_current_iteration += 1
+		if loss_current_iteration%350 == 0:
+			mu *= 2
                 start_iter = time.time()
-
-                #match_type, \
-                #img_a, img_b, \
-                #matches_a, matches_b, \
-                #masked_non_matches_a, masked_non_matches_b, \
-                #background_non_matches_a, background_non_matches_b, \
-                #blind_non_matches_a, blind_non_matches_b, \
-                #metadata = data
 
                 match_type, \
                 img_a, img_b, \
@@ -337,17 +331,20 @@ class DenseCorrespondenceTraining(object):
 
                 image_b_pred = dcn.forward(img_b)
                 image_b_pred = dcn.process_network_output(image_b_pred, batch_size)
+                    
 
-                # get loss
-                #loss, match_loss, masked_non_match_loss, \
-                #background_non_match_loss, blind_non_match_loss = loss_composer.get_loss(pixelwise_contrastive_loss, match_type,
-                #                                                                image_a_pred, image_b_pred,
-                #                                                                matches_a,     matches_b,
-                #                                                                masked_non_matches_a, masked_non_matches_b,
-                #                                                                background_non_matches_a, background_non_matches_b,
-                #                                                                blind_non_matches_a, blind_non_matches_b)
+                if self._contrastive:
+                    # get loss
+                    loss, match_loss, masked_non_match_loss, \
+                    background_non_match_loss, blind_non_match_loss = loss_composer.get_loss(pixelwise_contrastive_loss, match_type,
+                                                                                    image_a_pred, image_b_pred,
+                                                                                    matches_a,     matches_b,
+                                                                                    masked_non_matches_a, masked_non_matches_b,
+                                                                                    background_non_matches_a, background_non_matches_b,
+                                                                                    blind_non_matches_a, blind_non_matches_b)
                 
-		loss, distributional, lipschitz = loss_composer.get_distributional_loss(image_a_pred, image_b_pred, img_a_mask, img_b_mask, matches_a, matches_b, bimodal=True)
+                else:
+		    loss, distributional, lipschitz = loss_composer.get_distributional_loss(image_a_pred, image_b_pred, img_a_mask, img_b_mask, matches_a, matches_b, mu, bimodal=True)
 
 		print "loss:", loss
                 loss.backward()
@@ -355,6 +352,69 @@ class DenseCorrespondenceTraining(object):
 
                 elapsed = time.time() - start_iter
                 print "iteration %d took %.3f seconds" %(loss_current_iteration, elapsed)
+
+
+		def update_plots(loss, match_loss, masked_non_match_loss, background_non_match_loss, blind_non_match_loss):
+                    """
+                    Updates the tensorboard plots with current loss function information
+                    :return:
+                    :rtype:
+                    """
+
+
+
+                    learning_rate = DenseCorrespondenceTraining.get_learning_rate(optimizer)
+                    self._logging_dict['train']['learning_rate'].append(learning_rate)
+                    self._tensorboard_logger.log_value("learning rate", learning_rate, loss_current_iteration)
+
+
+                    # Don't update any plots if the entry corresponding to that term
+                    # is a zero loss
+                    #if not loss_composer.is_zero_loss(match_loss):
+                    #self._logging_dict['train']['match_loss'].append(match_loss.data[0])
+                    self._logging_dict['train']['match_loss'].append(match_loss.item())
+                    self._tensorboard_logger.log_value("train match loss", match_loss.item(), loss_current_iteration)
+
+                    #if not loss_composer.is_zero_loss(masked_non_match_loss):
+                    self._logging_dict['train']['masked_non_match_loss'].append(masked_non_match_loss.item())
+
+                    self._tensorboard_logger.log_value("train masked non match loss", masked_non_match_loss.item(), loss_current_iteration)
+
+                    #if not loss_composer.is_zero_loss(background_non_match_loss):
+                    self._logging_dict['train']['background_non_match_loss'].append(background_non_match_loss.item())
+                    self._tensorboard_logger.log_value("train background non match loss", background_non_match_loss.item(), loss_current_iteration)
+
+                    #if not loss_composer.is_zero_loss(blind_non_match_loss):
+
+                    if data_type == SpartanDatasetDataType.SINGLE_OBJECT_WITHIN_SCENE:
+                    	self._tensorboard_logger.log_value("train blind SINGLE_OBJECT_WITHIN_SCENE", blind_non_match_loss.item(), loss_current_iteration)
+
+                    if data_type == SpartanDatasetDataType.DIFFERENT_OBJECT:
+                        self._tensorboard_logger.log_value("train blind DIFFERENT_OBJECT", blind_non_match_loss.item(), loss_current_iteration)
+
+
+                    # loss is never zero
+                    if data_type == SpartanDatasetDataType.SINGLE_OBJECT_WITHIN_SCENE:
+                        print "logging train loss"
+                        self._tensorboard_logger.log_value("train loss SINGLE_OBJECT_WITHIN_SCENE", loss.item(), loss_current_iteration)
+
+                    elif data_type == SpartanDatasetDataType.DIFFERENT_OBJECT:
+                        self._tensorboard_logger.log_value("train loss DIFFERENT_OBJECT", loss.item(), loss_current_iteration)
+
+                    elif data_type == SpartanDatasetDataType.SINGLE_OBJECT_ACROSS_SCENE:
+                        self._tensorboard_logger.log_value("train loss SINGLE_OBJECT_ACROSS_SCENE", loss.item(), loss_current_iteration)
+
+                    elif data_type == SpartanDatasetDataType.MULTI_OBJECT:
+                        self._tensorboard_logger.log_value("train loss MULTI_OBJECT", loss.item(), loss_current_iteration)
+                    
+                    elif data_type == SpartanDatasetDataType.SYNTHETIC_MULTI_OBJECT:
+                        self._tensorboard_logger.log_value("train loss SYNTHETIC_MULTI_OBJECT", loss.item(), loss_current_iteration)
+                    else:
+                        raise ValueError("unknown data type")
+
+
+                    if data_type == SpartanDatasetDataType.DIFFERENT_OBJECT:
+                        self._tensorboard_logger.log_value("train different object", loss.item(), loss_current_iteration)
 
                 def update_plot(loss, distributional=None, lipschitz=None):
                     """
@@ -375,8 +435,10 @@ class DenseCorrespondenceTraining(object):
                     if distributional is not None:
                         self._tensorboard_logger.log_value("train loss LIPSCHITZ", lipschitz.item(), loss_current_iteration)
 
-                #update_plots(loss, match_loss, masked_non_match_loss, background_non_match_loss, blind_non_match_loss)
-                update_plot(loss, distributional=distributional, lipschitz=lipschitz)
+		if self._contrastive:
+                	update_plots(loss, match_loss, masked_non_match_loss, background_non_match_loss, blind_non_match_loss)
+		else:
+                	update_plot(loss, distributional=distributional, lipschitz=lipschitz)
 
                 if loss_current_iteration % save_rate == 0:
                     self.save_network(dcn, optimizer, loss_current_iteration, logging_dict=self._logging_dict)

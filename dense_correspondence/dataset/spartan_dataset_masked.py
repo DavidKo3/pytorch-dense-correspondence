@@ -363,8 +363,10 @@ class SpartanDataset(DenseCorrespondenceDataset):
         """
         if self._image_index_sample_range is None:
     	    knots_info = self.get_knots_info(scene_name)
-            image_idxs = knots_info.keys() 
+            image_idxs = knots_info.keys()
             random_idx = int(random.choice(image_idxs))
+	    if random_idx == 0:
+		random_idx = 1
         else:
             random_idx = int(random.choice(self._image_index_sample_range)) 
         return random_idx	
@@ -562,8 +564,10 @@ class SpartanDataset(DenseCorrespondenceDataset):
         SD = SpartanDataset
 
         image_a_idx = self.get_random_image_index(scene_name)
-        image_a_rgb, image_a_mask = self.get_rgb_mask(scene_name, image_a_idx)
+	#image_b_idx = image_a_idx
         image_b_idx = self.get_random_image_index(scene_name)
+	#image_a_idx = 197
+        image_a_rgb, image_a_mask = self.get_rgb_mask(scene_name, image_a_idx)
         metadata['image_b_idx'] = image_b_idx
         if image_b_idx is None:
             logging.info("no frame with sufficiently different pose found, returning")
@@ -607,10 +611,19 @@ class SpartanDataset(DenseCorrespondenceDataset):
         #         [image_b_rgb, image_b_depth, image_b_mask], uv_b)
 
         # find non_correspondences
-        image_b_mask_torch = torch.from_numpy(np.asarray(image_b_mask)).type(torch.FloatTensor)
+	#@Adi
+	image_b_mask_torch = torch.from_numpy(np.asarray(image_b_mask)).type(torch.FloatTensor)
 	image_b_shape = (image_b_mask_torch.shape[0], image_b_mask_torch.shape[1])
         image_width = image_b_shape[1]
         image_height = image_b_shape[0]
+        img_a_knots = [[[min(max(0, pixels[0][0]), image_width - 1), min(max(0, pixels[0][1]), image_height - 1)]] for pixels in img_a_knots]
+        img_b_knots = [[[min(max(0, pixels[0][0]), image_width - 1), min(max(0, pixels[0][1]), image_height - 1)]] for pixels in img_b_knots]
+
+	#@Priya
+        #image_b_mask_torch = torch.from_numpy(np.asarray(image_b_mask)).type(torch.FloatTensor)
+	#image_b_shape = (image_b_mask_torch.shape[0], image_b_mask_torch.shape[1])
+        #image_width = image_b_shape[1]
+        #image_height = image_b_shape[0]
 
         uv_b_masked_non_matches = \
             correspondence_finder.create_non_correspondences(uv_b,
@@ -639,6 +652,10 @@ class SpartanDataset(DenseCorrespondenceDataset):
 
         matches_a = SD.flatten_uv_tensor(uv_a, image_width)
         matches_b = SD.flatten_uv_tensor(uv_b, image_width)
+	
+	# @Priya: HACK
+	matches_a = torch.clamp(matches_a, 0, image_width*image_height - 1)
+	matches_b = torch.clamp(matches_b, 0, image_width*image_height - 1)
 
         # Masked non-matches
         uv_a_masked_long, uv_b_masked_non_matches_long = self.create_non_matches(uv_a, uv_b_masked_non_matches, self.num_masked_non_matches_per_match)

@@ -6,9 +6,6 @@ from dense_correspondence.training.training import *
 import sys
 import logging
 
-# utils.set_default_cuda_visible_devices()
-#utils.set_cuda_visible_devices([2, 3, 4]) # use this to manually set CUDA_VISIBLE_DEVICES
-
 from dense_correspondence.training.training import DenseCorrespondenceTraining
 from dense_correspondence.dataset.spartan_dataset_masked import SpartanDataset
 
@@ -22,6 +19,8 @@ parser.add_argument('--normalization', type=str, default="standard") # unit or s
 parser.add_argument('--depth_invariant', action='store_true')
 parser.add_argument('--gpu_id', type=str, default='2')
 parser.add_argument("--resume", help="resume from checkpoint params",
+                    action="store_true")
+parser.add_argument("--dist", help="use distributional loss instead of contrastive",
                     action="store_true")
 args = parser.parse_args()
 
@@ -60,8 +59,10 @@ if args.depth_invariant == True:
     train_config["dense_correspondence_network"]["depth_invariant"] = True
     print("Using depth invariant... ")
 
+contrastive = not args.dist
+print("Using contrastive loss:", contrastive)
 
-train = DenseCorrespondenceTraining(dataset=dataset, config=train_config)
+train = DenseCorrespondenceTraining(contrastive, dataset=dataset, config=train_config)
 if args.resume:
     train.run_from_pretrained("/home/priya/code/data_volume/pdc_synthetic_2/trained_models/tutorials/{}".format(args.name))
 else:

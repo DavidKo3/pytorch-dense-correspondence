@@ -92,8 +92,8 @@ def bimodal_gauss(G1, G2, normalize=False):
         return normalize(bimodal)
     return bimodal
 
-def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, sigma=2, masked_indices=None, symm_matches_a=None, image_width=640, image_height=480):
-    num_matches = matches_b.shape[0]
+def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, sigma=1.0, masked_indices=None, symm_matches_a=None, image_width=640, image_height=480):
+    #num_matches = matches_b.shape[0]
     matches_b_descriptor = torch.index_select(image_b_pred, 1, matches_b)
     matches_b_descriptor = matches_b_descriptor.view(matches_b_descriptor.shape[1], 1, matches_b_descriptor.shape[2])
     norm_degree = 2
@@ -103,8 +103,9 @@ def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, 
     p_a = F.softmax(-1 * norm_diffs, dim=1).double() # compute current distribution
     q_a = gauss_2d_batch(image_width, image_height, sigma, matches_a%image_width, matches_a/image_width, masked_indices=masked_indices)
     if symm_matches_a is not None:
-	q_a_symm = gauss_2d_batch(image_width, image_height, sigma, symm_matches_a%image_width, symm_matches_a/image_width, masked_indices=masked_indices)
-	q_a = bimodal_gauss(q_a, q_a_symm)
+	for s in symm_matches_a:
+		q_a_symm = gauss_2d_batch(image_width, image_height, sigma, s%image_width, s/image_width, masked_indices=masked_indices)
+		q_a = bimodal_gauss(q_a, q_a_symm)
     q_a = normalize(q_a)
     q_a += 1e-300
     loss = F.kl_div(q_a.log(), p_a, None, None, 'sum')/matches_b_descriptor.shape[0]
@@ -188,25 +189,38 @@ def lipschitz_batch(matches_b, image_a_pred, image_b_pred, L, k, mu, image_width
 	return loss, time_loss
     
     return loss
+
+def rope_symm_idxs(idxs):
+    return [torch.LongTensor(idxs[::-1]).cuda()]
+
+def cloth_symm_idxs(idxs):
+    idxs = torch.LongTensor(idxs).cuda()
+    n = torch.tensor(int(len(idxs)**0.5)).cuda() # Cloth is N x N 
+    row = idxs//n
+    col = idxs%n
+    row_symm = n-1-row
+    col_symm = n-1-col
+    symm1 = row_symm*n + col
+    symm2 = row_symm*n + col_symm
+    symm3 = row*n + col_symm
+    return [symm1, symm2, symm3]
     
-def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, bimodal=False):
-    matches_a = matches_a[::6]
-    matches_b = matches_b[::6]
-    L_lip_a_b = lipschitz_batch(matches_b, image_a_pred, image_b_pred, 1, 20, 1)
-    L_lip_b_a = lipschitz_batch(matches_a, image_b_pred, image_a_pred, 1, 20, 1)
+def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, mu, bimodal=False):
+    #L_lip_a_b = lipschitz_batch(matches_b, image_a_pred, image_b_pred, 1, 20, mu)
+    #L_lip_b_a = lipschitz_batch(matches_a, image_b_pred, image_a_pred, 1, 20, mu)
     masked_indices_a = flattened_mask_indices(image_a_mask, inverse=True)
     masked_indices_b = flattened_mask_indices(image_b_mask, inverse=True)
-    #reverse_idxs = list(range(len(matches_a)-1, -1, -1))
-    #symm_matches_a = matches_a.index_select(0, torch.LongTensor(reverse_idxs).cuda()) 
-    #symm_matches_b = matches_b.index_select(0, torch.LongTensor(reverse_idxs).cuda()) 
-    symm_matches_a = None
-    symm_matches_b = None
+    idxs = list(range(len(matches_a)))
+    symm_idxs = cloth_symm_idxs(idxs)
+    symm_matches_a = [matches_a.index_select(0, s) for s in symm_idxs]
+    symm_matches_b = [matches_b.index_select(0, s) for s in symm_idxs]
     L_a_b = distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, masked_indices=masked_indices_a, symm_matches_a=symm_matches_a)
     L_b_a = distributional_loss_batch(image_b_pred, image_a_pred, matches_b, matches_a, masked_indices=masked_indices_b, symm_matches_a=symm_matches_b)
-    lipschitz = 0.5*L_lip_a_b + 0.5*L_lip_b_a
+    #lipschitz = 0.5*L_lip_a_b + 0.5*L_lip_b_a
+    lipschitz = torch.Tensor([0.0])
     distributional = 0.5*L_a_b + 0.5*L_b_a 
-    total_loss = lipschitz + distributional
-    #total_loss = lipschitz
+    #total_loss = lipschitz + distributional
+    total_loss = distributional
     return total_loss, distributional, lipschitz
 
 def get_within_scene_loss(pixelwise_contrastive_loss, image_a_pred, image_b_pred,
