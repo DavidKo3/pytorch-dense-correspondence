@@ -61,7 +61,9 @@ def pair_vertices(img_a_knots, img_b_knots):
 	zipped = zip(A, cycle(B)) if len(A) > len(B) else zip(cycle(A), B)
 	return list(zipped)
     #paired = [zip_pixels(img_a_knots[i], img_b_knots[i]) for i in range(len(img_a_knots))]
-    paired = [list(zip(img_a_knots[i], img_b_knots[i])) for i in range(len(img_a_knots))]
+    #print(img_a_knots, img_b_knots)
+    #paired = [list(zip(img_a_knots[i], img_b_knots[i])) for i in range(len(img_a_knots))]
+    paired = [list(zip(img_a_knots[i], img_b_knots[i])) for i in range(min(len(img_a_knots), len(img_b_knots)))]
     paired = [item for sublist in paired for item in sublist]
     knots_a_list, knots_b_list = [p[0] for p in paired], [p[1] for p in paired]
     x_a, y_a = [i[0] for i in knots_a_list], [j[1] for j in knots_a_list]
