@@ -2282,6 +2282,7 @@ class DenseCorrespondenceEvaluationPlotter(object):
         cumhist *= 1.0 / len(data)
         x_axis = l + b * np.arange(0, num_bins)
         x_axis /= x_axis_scale_factor
+	#ax.legend(prop=dict(size=18))
         plot = ax.plot(x_axis, cumhist, label=label)
         print 'summed errors', np.sum(x_axis)
         return plot
@@ -2541,6 +2542,11 @@ class DenseCorrespondenceEvaluationPlotter(object):
         if use_masked_plots:
             plot = DCEP.make_pixel_match_error_plot(axes[0,1], df, label=label, masked=True)
         ax.legend()
+	
+	plt.setp(ax.get_legend().get_texts(), fontsize='16') # for legend text
+	plt.setp(ax.get_legend().get_texts(), fontsize='16') # for legend text
+	plt.setp(ax.get_legend().get_lines(), linewidth=5)
+
       	#plt.savefig('/home/priya/code/data_volume/pixel_match_new.png') 
         # 3D match error
         #ax = get_ax(axes, 1)
