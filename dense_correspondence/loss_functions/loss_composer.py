@@ -61,7 +61,7 @@ def get_loss(pixelwise_contrastive_loss, match_type,
     else:
         raise ValueError("Should only have above scenes?")
 
-def flattened_mask_indices(img_mask, width=640, height=480, inverse=False):
+def flattened_mask_indices(img_mask, width=485, height=485, inverse=False):
     mask = img_mask.view(width*height,1).squeeze(1)
     if inverse:
     	inv_mask = 1 - mask
@@ -92,7 +92,7 @@ def bimodal_gauss(G1, G2, normalize=False):
         return normalize(bimodal)
     return bimodal
 
-def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, sigma=1.0, masked_indices=None, symm_matches_a=None, image_width=640, image_height=480):
+def distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, sigma=1.0, masked_indices=None, symm_matches_a=None, image_width=485, image_height=485):
     #num_matches = matches_b.shape[0]
     matches_b_descriptor = torch.index_select(image_b_pred, 1, matches_b)
     matches_b_descriptor = matches_b_descriptor.view(matches_b_descriptor.shape[1], 1, matches_b_descriptor.shape[2])
@@ -208,14 +208,16 @@ def cloth_symm_idxs(idxs):
 def get_distributional_loss(image_a_pred, image_b_pred, image_a_mask, image_b_mask,  matches_a, matches_b, mu, bimodal=False):
     #L_lip_a_b = lipschitz_batch(matches_b, image_a_pred, image_b_pred, 1, 20, mu)
     #L_lip_b_a = lipschitz_batch(matches_a, image_b_pred, image_a_pred, 1, 20, mu)
-    masked_indices_a = flattened_mask_indices(image_a_mask, inverse=True)
-    masked_indices_b = flattened_mask_indices(image_b_mask, inverse=True)
+    _, image_height, image_width = image_a_mask.shape
+    masked_indices_a = flattened_mask_indices(image_a_mask, width=image_width, height=image_height, inverse=True)
+    masked_indices_b = flattened_mask_indices(image_b_mask, width=image_width, height=image_height, inverse=True)
     idxs = list(range(len(matches_a)))
-    symm_idxs = cloth_symm_idxs(idxs)
+    #symm_idxs = cloth_symm_idxs(idxs)
+    symm_idxs = rope_symm_idxs(idxs)
     symm_matches_a = [matches_a.index_select(0, s) for s in symm_idxs]
     symm_matches_b = [matches_b.index_select(0, s) for s in symm_idxs]
-    L_a_b = distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, masked_indices=masked_indices_a, symm_matches_a=symm_matches_a)
-    L_b_a = distributional_loss_batch(image_b_pred, image_a_pred, matches_b, matches_a, masked_indices=masked_indices_b, symm_matches_a=symm_matches_b)
+    L_a_b = distributional_loss_batch(image_a_pred, image_b_pred, matches_a, matches_b, masked_indices=masked_indices_a, symm_matches_a=symm_matches_a, image_width=image_width, image_height=image_height)
+    L_b_a = distributional_loss_batch(image_b_pred, image_a_pred, matches_b, matches_a, masked_indices=masked_indices_b, symm_matches_a=symm_matches_b, image_width=image_width, image_height=image_height)
     #lipschitz = 0.5*L_lip_a_b + 0.5*L_lip_b_a
     lipschitz = torch.Tensor([0.0])
     distributional = 0.5*L_a_b + 0.5*L_b_a 
